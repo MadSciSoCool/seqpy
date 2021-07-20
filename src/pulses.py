@@ -1,5 +1,5 @@
 import numpy as np
-from functools import wraps, partial
+from functools import wraps
 
 SAMPLING_FREQUENCY = 2.4e9
 USE_RELATIVE_TIMING = False
@@ -81,15 +81,7 @@ class Pulse:
 
     @relative_timing
     def shift(self, length: int):
-        if length > 0:
-            waveform = np.append(np.zeros(length), self._waveform)
-            right = self._right + length
-            left = self._left
-        else:
-            waveform = np.append(self._waveform, np.zeros(-length))
-            left = self._left + length
-            right = self._right
-        return Pulse(waveform, left, right)
+        return Pulse(self._waveform, self._left + length, self._right + length)
 
     @padding
     def __add__(self, other):
@@ -240,27 +232,3 @@ class Ramp(Pulse):
         x = np.arange(left, right)
         waveform = ramp(x, width, amplitude_start, amplitude_end)
         super().__init__(waveform, left, right)
-
-
-class Sequence:
-    def __init__(self):
-        self.pulses = list()
-        self.offset = 0
-
-    def register(self, position: int, pulse: Pulse, carrier: Carrier = None, carrier_phases=(), carrier_frequencies=()):
-        if not carrier:
-            carrier = Carrier(carrier_phases, carrier_frequencies)
-        self.pulses.append((position, pulse, carrier))
-
-    def waveform(self, allow_negative=False):
-        base = Pulse([], left=0, right=0)
-        for position, pulse, carrier in self.pulses:
-            shifted = pulse.shift(position)
-            shifted._waveform = shifted._waveform * \
-                carrier.waveform(len(shifted.waveform))
-            base += shifted
-        if allow_negative:
-            self.offset = base._left
-            return base.waveform
-        else:
-            return base.waveform[-base._right:]
