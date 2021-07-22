@@ -1,5 +1,5 @@
-from ..pulses import Sequence
-from sys import path
+from ..sequence import Sequence
+from os import path
 
 
 class SeqcFile:
@@ -18,10 +18,10 @@ class SeqcFile:
 
     def define_placeholder(self, index, length):
         # declare placeholder
-        self._writeline(f"wave w{index}_1 placeholder({length}, true);")
-        self._writeline(f"wave w{index}_2 placeholder({length}, true);")
+        self._writeline(f"wave w{index}_1 = placeholder({length:d}, true);")
+        self._writeline(f"wave w{index}_2 = placeholder({length:d}, true);")
         # assign placeholder
-        self._writeline(f"assignWaveIndex(w{index}_1, w{index}_2, 0);")
+        # self._writeline(f"assignWaveIndex(w{index}_1, w{index}_2, 0);")
 
     # def define_marker(self, length, position):
     #     self._writeline(f"wave marker_left = marker({position},0);")
@@ -32,15 +32,15 @@ class SeqcFile:
     #     self._writeline(f"playWave(1, marker_signal);")
 
     def wait(self, samples):
-        self._writeline(f"playZero({samples});")
+        self._writeline(f"playZero({int(samples):d});")
         # don't know the difference between playZero and wait yet
-        # self._writeline(f"wait({samples});")
+        # self._writeline(f"wait({int(samples):d});")
 
     def play_wave(self, index):
         self._writeline(f"playWave(w{index}_1, w{index}_2);")
 
     def start_main_loop(self, iterations):
-        self._writeline(f"repeat({iterations}){{")
+        self._writeline(f"repeat({int(iterations):d}){{")
         self._indentation = True
 
     def end_main_loop(self):

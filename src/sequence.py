@@ -1,6 +1,14 @@
-from .pulses import Pulse, Carrier, relative_timing
+from .pulses import Pulse, Carrier, relative_timing, SAMPLING_FREQUENCY, USE_RELATIVE_TIMING
 from warnings import warn
 import numpy as np
+import matplotlib.pyplot as plt
+
+TRIGGER_DELAY = 0
+
+
+def set_trigger_delay(value):
+    global TRIGGER_DELAY
+    TRIGGER_DELAY = value
 
 
 class Sequence:
@@ -43,10 +51,10 @@ class Sequence:
             self._alignment = mode
 
     def length(self):
-        return len(self.waveform()[0])
+        return len(self.waveforms()[0])
 
-    def waveform(self):
-        offset = 0 if self._alignment is "zero" else self._trigger_pos
+    def waveforms(self):
+        offset = 0 if self._alignment == "zero" else self._trigger_pos
         waveforms = list()
         for channel in self._pulses:
             base = Pulse([], left=0, right=0)
@@ -64,13 +72,30 @@ class Sequence:
                 left = wf._left
             if wf._right > right:
                 right = wf._right
+        # acount for the trigger offset
+        left = left - 1000
+        # padded to make the waveform to align with 16 samples (artifacts of zhinst)
+        right += (left - right) % 16
         for wf in waveforms:
             wf._pad(left, right)
         self.right = base._right + offset
         self.left = base._left + offset
-        return [wf.wavefrom for wf in waveforms]
+        return [wf.waveform for wf in waveforms]
 
-    def marker_waveform(self):
-        base = np.zeros(self.length)
-        base[self._trigger_pos:] = 1
+    def plot(self):
+        fig, ax = plt.subplots()
+        waveforms = self.waveforms()
+        x_axis = np.arange(self.left, self.right)
+        if USE_RELATIVE_TIMING:
+            x_axis = x_axis / SAMPLING_FREQUENCY
+        for i in range(len(waveforms)):
+            plt.plot(x_axis, waveforms[i], label=f"channel{i}")
+        ax.plot(x_axis, self.marker_waveform(delay=False), label="marker")
+        fig.legend()
+        return fig
+
+    def marker_waveform(self, delay=True):
+        base = np.zeros(self.length())
+        delay_offset = TRIGGER_DELAY if delay else 0
+        base[self._trigger_pos-self.left-delay_offset:] = 1
         return base
