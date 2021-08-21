@@ -37,14 +37,29 @@ class Sequence(SweepableExpr):
         else:
             self._pulses[channel].append((position, pulse, carrier))
 
+    @property
+    def trigger_pos(self):
+        return self.retrieve_value(self._trigger_pos)[0]
+
+    @trigger_pos.setter
     @relative_timing
     def trigger_pos(self, position: int):
         self._trigger_pos = position
 
+    @property
+    def period(self):
+        return self.retrieve_value(self._period)[0]
+
+    @period.setter
     @relative_timing
     def period(self, period: int):
         self._period = period
 
+    @property
+    def repetitions(self):
+        return self.retrieve_value(self._repetitions)[0]
+
+    @repetitions.setter
     def repetitions(self, repetitions: int):
         self._repetitions = repetitions
 
@@ -53,12 +68,13 @@ class Sequence(SweepableExpr):
 
     def waveforms(self):
         self._update_sweepables_values()
-        offset = 0 if PHASE_ALIGNMENT == "zero" else self._trigger_pos
+        offset = 0 if PHASE_ALIGNMENT == "zero" else self.trigger_pos
         waveforms = list()
         for channel in self._pulses:
             base = Pulse(left=np.inf, right=-np.inf)
             for position, pulse, carrier in channel:
-                shifted = pulse.shift(self.retrieve_value(position) - offset)
+                shifted = pulse.shift(
+                    self.retrieve_value(position)[0] - offset)
                 base += shifted * carrier
             waveforms.append(base)
         # padding all channels to have the same length
@@ -99,7 +115,7 @@ class Sequence(SweepableExpr):
     def marker_waveform(self, delay=True):
         base = np.zeros(self.length())
         delay_offset = TRIGGER_DELAY if delay else 0
-        base[self._trigger_pos-self.left-delay_offset:] = 1
+        base[self.trigger_pos-self.left-delay_offset:] = 1
         return base
 
     def _update_sweepables_values(self):
@@ -109,6 +125,17 @@ class Sequence(SweepableExpr):
                     pulse.subs(k, v)
                     carrier.subs(k, v)
 
-    # def save():
+    def dump(self):
+        dumped = dict()
+        dumped["trigger pos"] = self._trigger_pos
+        dumped["period"] = self._period
+        dumped["repetitions"] = self._repetitions
+        for i, channel in enumerate(self._pulses):
+            dumped[i] = dict()
+            for j, (position, pulse, carrier) in enumerate(channel):
+                dumped[i][j]["position"] = position
+                dumped[i][j]["pulse"] = pulse.dump()
+                dumped[i][j]["carrier"] = carrier.dump()
+        return dumped
 
     # def load():

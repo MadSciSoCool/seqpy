@@ -1,3 +1,4 @@
+from ast import dump
 from sympy import Symbol, Expr, symbols
 from sympy.functions import Max, Min
 from .utils.math_util import *
@@ -53,7 +54,8 @@ class Sweepable(Symbol):
         Symbol.__init__(name)
 
 
-def sweepables(names):
+def sweepables(number=1):
+    names = " ".join(["x" + str(i) for i in range(int(number))])
     syms = symbols(names)
     if isinstance(syms, Symbol):
         return Sweepable(syms.name)
@@ -80,10 +82,7 @@ class SweepableExpr:
                 else:
                     expr = float(expr)  # Float or Infinity
                 return_exprs.append(expr)
-        if len(return_exprs) == 1:
-            return return_exprs[0]
-        else:
-            return return_exprs
+        return return_exprs
 
     def subs(self, name, value):
         self._sweepable_mapping[name] = value
@@ -91,7 +90,7 @@ class SweepableExpr:
 
 class Pulse(SweepableExpr):
 
-    def __init__(self, left, right, gain=1, offset=0, type="atom", childs=[]) -> None:
+    def __init__(self, left, right, gain=1, offset=0, type="atom", children=[]) -> None:
         super().__init__()
         self._left = left
         self._right = right
@@ -100,7 +99,7 @@ class Pulse(SweepableExpr):
         self._displacement = 0
         self.is_atom = True if type == "atom" else False
         self.type = type
-        self.childs = childs
+        self.children = children
 
     # -------------- Handle arithmetic Operation --------------
 
@@ -122,7 +121,7 @@ class Pulse(SweepableExpr):
 
     def __add__(self, other):
         if isinstance(other, Pulse):
-            return Pulse(Min(self._left, other._left), Max(self._right, other._right), type="add", childs=[self, other])
+            return Pulse(Min(self._left, other._left), Max(self._right, other._right), type="add", children=[self, other])
         else:
             new = copy.deepcopy(self)
             new._offset += other
@@ -133,7 +132,7 @@ class Pulse(SweepableExpr):
 
     def __mul__(self, other):
         if isinstance(other, Pulse):
-            return Pulse(Min(self._left, other._left), Max(self._right, other._right), type="mul", childs=[self, other])
+            return Pulse(Min(self._left, other._left), Max(self._right, other._right), type="mul", children=[self, other])
         else:
             new = copy.deepcopy(self)
             new._gain *= other
@@ -162,16 +161,17 @@ class Pulse(SweepableExpr):
             if self.left > self.right:
                 return np.array([])
             x = np.arange(self.left, self.right) - self.displacement
-            return self._waveform(x) * self.retrieve_value(self._gain) + self._offset
+            return self._waveform(x) * self.gain + self.offset
         else:
             # -------------- Tree traversing --------------
-            child1, child2 = [c.shift(self._displacement) for c in self.childs]
+            child1, child2 = [c.shift(self.displacement)
+                              for c in self.children]
             wf1 = child1._pad(child1.waveform, self.left, self.right)
             wf2 = child2._pad(child2.waveform, self.left, self.right)
             if self.type == "add":
-                return wf1 + wf2
+                return (wf1 + wf2) * self.gain + self.offset
             elif self.type == "mul":
-                return wf1 * wf2
+                return (wf1 * wf2) * self.gain + self.offset
 
     @waveform.setter
     def setter(self, val):
@@ -179,25 +179,50 @@ class Pulse(SweepableExpr):
 
     @property
     def left(self):
-        left_val = self.retrieve_value(self._left)
+        left_val = self.retrieve_value(self._left)[0]
         return left_val if np.isinf(left_val) else round(left_val)
 
     @property
     def right(self):
-        right_val = self.retrieve_value(self._right)
+        right_val = self.retrieve_value(self._right)[0]
         return right_val if np.isinf(right_val) else round(right_val)
 
     @property
     def displacement(self):
-        return self.retrieve_value(self._displacement)
+        return self.retrieve_value(self._displacement)[0]
+
+    @property
+    def gain(self):
+        return self.retrieve_value(self._gain)[0]
+
+    @property
+    def offset(self):
+        return self.retrieve_value(self._offset)[0]
 
     def _waveform(self, x):
         return np.zeros(len(x))
 
     def subs(self, name, value):
         super().subs(name, value)
-        for child in self.childs:
+        for child in self.children:
             child.subs(name, value)
+
+    # ----------- For dumping waveforms information -----------
+
+    def dump(self):
+        dumped = dict()
+        dumped["type"] = self.type
+        dumped["object type"] = str(type(self))
+        dumped["gain"] = self._gain
+        dumped["offset"] = self._offset
+        dumped["displacement"] = self._displacement
+        dumped["extra params"] = self.extra_params
+        dumped["children"] = [c.dump for c in self.children]
+        return dumped
+
+    @property
+    def extra_params(self):
+        return []
 
 
 # ------------------------------------------------
@@ -208,21 +233,20 @@ class Pulse(SweepableExpr):
 
 
 class Carrier(Pulse):
-    def __init__(self, phases, frequencies) -> None:
+    def __init__(self, frequencies, phases) -> None:
         super().__init__(left=np.inf, right=-np.inf)
-        if not hasattr(phases, '__iter__'):
-            phases = (phases, )
         if not hasattr(frequencies, '__iter__'):
             frequencies = (frequencies, )
-        self.phases = phases
+        if not hasattr(phases, '__iter__'):
+            phases = (phases, )
         self.frequencies = frequencies
+        self.phases = phases
 
     def _waveform(self, x):
         x = x / SAMPLING_FREQUENCY
         carrier = np.ones(len(x))
-        for phase, frequency in zip(self.phases, self.frequencies):
-            phase = self.retrieve_value(phase)
-            frequency = self.retrieve_value(frequency)
+        frequencies, phases = self.extra_params
+        for frequency, phase in zip(frequencies, phases):
             phase_in_rad = phase * np.pi / 180
             carrier = carrier * \
                 np.cos(2 * np.pi * frequency * x + phase_in_rad)
@@ -231,6 +255,9 @@ class Carrier(Pulse):
     def _pad(self, waveform, left, right):
         return self._waveform(np.arange(left, right))
 
+    @property
+    def extra_params(self):
+        return (self.retrieve_value(*self.frequencies), self.retrieve_value(*self.phases))
 
 # ------------------------------------------------
 #
@@ -249,8 +276,11 @@ class Gaussian(Pulse):
         super().__init__(left, right)
 
     def _waveform(self, x):
-        width, plateau = self.retrieve_value(self.width, self.plateau)
-        return gauss(x, width, plateau)
+        return gauss(x, *self.extra_params)
+
+    @property
+    def extra_params(self):
+        return self.retrieve_value(self.width, self.plateau)
 
 
 class Drag(Pulse):
@@ -262,8 +292,11 @@ class Drag(Pulse):
         super().__init__(left, right)
 
     def _waveform(self, x):
-        width = self.retrieve_value(self.width)
-        return drag(x, width)
+        return drag(x, *self.extra_params)
+
+    @property
+    def extra_params(self):
+        return self.retrieve_value(self.width)
 
 
 class Rect(Pulse):
@@ -275,8 +308,11 @@ class Rect(Pulse):
         super().__init__(left, right)
 
     def _waveform(self, x):
-        width = self.retrieve_value(self.width)
-        return rectangle(x, width)
+        return rectangle(x, *self.extra_params)
+
+    @property
+    def extra_params(self):
+        return self.retrieve_value(self.width)
 
 
 class Cosine(Pulse):
@@ -290,8 +326,11 @@ class Cosine(Pulse):
         super().__init__(left, right)
 
     def _waveform(self, x):
-        width, plateau = self.retrieve_value(self.width, self.plateau)
-        return cos(x, width, plateau)
+        return cos(x, *self.extra_params)
+
+    @property
+    def extra_params(self):
+        return self.retrieve_value(self.width, self.plateau)
 
 
 class Ramp(Pulse):
@@ -306,6 +345,8 @@ class Ramp(Pulse):
         super().__init__(left, right)
 
     def _waveform(self, x):
-        width, amplitude_start, amplitude_end = self.retrieve_value(
-            self.width, self.amplitude_start, self.amplitude_end)
-        return ramp(x, width, amplitude_start, amplitude_end)
+        return ramp(x, *self.extra_params)
+
+    @property
+    def extra_params(self):
+        return self.retrieve_value(self.width, self.amplitude_start, self.amplitude_end)
