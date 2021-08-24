@@ -58,27 +58,6 @@ class SeqcFile:
 
 
 def seqc_generation(sequence: Sequence, filepath: str = ""):
-    # split the waveform before and after the trigger
-    # left_max = -np.inf
-    # right_min = +np.inf
-    # for channel in seq._pulses:
-    #     for pulse_info in channel:
-    #         position, pulse, carrier = pulse_info
-    #         left = position + pulse._left
-    #         right = position + pulse._left
-    #         if left < seq._trigger_pos < right:
-    #             raise Exception("trigger overlaps with one of the pulses")
-    #         if left_max < right <= seq._trigger_pos:
-    #             left_max = right
-    #         if right_min > left >= seq._trigger_pos:
-    #             right_min = left
-    # threshold = 3  # to be confirmed
-    # trig_length = 16  # to be confirmed
-    # if seq._trigger_pos - left_max < threshold or right_min - seq._trigger_pos < threshold:
-    #     raise Exception("trigger is too close to one of the pulses")
-    # if right_min - left_max < threshold * 2 + trig_length:
-    #     raise Exception("no space to play the trigger")
-
     # write the .seqC file
     wave_length = sequence.length()
     seqc_file = SeqcFile(filepath)

@@ -1,14 +1,13 @@
-from ast import dump
 from sympy import Symbol, Expr, symbols
 from sympy.functions import Max, Min
 from .utils.math_util import *
-from warnings import warn
 import copy
 
 
 SAMPLING_FREQUENCY = 2.4e9
-USE_RELATIVE_TIMING = True
+RELATIVE_TIMING = True
 PHASE_ALIGNMENT = "Trigger"
+SYMBOL_COUNT = 0
 
 
 def sampling_frequency(val: float):
@@ -16,14 +15,15 @@ def sampling_frequency(val: float):
     SAMPLING_FREQUENCY = val
 
 
-def relative_timing(val: bool):
-    global USE_RELATIVE_TIMING
-    USE_RELATIVE_TIMING = val
+def relative_timing(val):
+    global RELATIVE_TIMING
+    RELATIVE_TIMING = val
 
 
 def phase_alignment(val: str):
     if val not in ("Zero", "Trigger"):
-        warn("phase alignment mode should be chosen in zero/trigger")
+        raise Exception(
+            "phase alignment mode should be chosen in zero/trigger")
     else:
         global PHASE_ALIGNMENT
         PHASE_ALIGNMENT = val
@@ -34,7 +34,7 @@ def relative_timing(f):
     def wrapper(*args, **kwargs):
         arg_index = 1  # accounting for the extra self argument
         for k, v in f.__annotations__.items():
-            if v is int and not USE_RELATIVE_TIMING:
+            if (v is int) and (not RELATIVE_TIMING):
                 if k in kwargs.keys():
                     kwargs[k] = int(kwargs[k] * SAMPLING_FREQUENCY)
                 else:
@@ -55,7 +55,10 @@ class Sweepable(Symbol):
 
 
 def sweepables(number=1):
-    names = " ".join(["x" + str(i) for i in range(int(number))])
+    global SYMBOL_COUNT
+    names = " ".join(["x" + str(i)
+                      for i in range(SYMBOL_COUNT, int(number + SYMBOL_COUNT))])
+    SYMBOL_COUNT += number
     syms = symbols(names)
     if isinstance(syms, Symbol):
         return Sweepable(syms.name)
@@ -67,24 +70,25 @@ class SweepableExpr:
     def __init__(self) -> None:
         self._sweepable_mapping = dict()
 
-    def retrieve_value(self, *args):
-        return_exprs = list()
-        for expr in args:
+    def retrieve_value(self, expr):
+        if hasattr(expr, "__iter__"):
+            return [self.retrieve_value(e) for e in expr]
+        else:
             if not isinstance(expr, Expr):
-                return_exprs.append(expr)
+                return expr
             else:
                 for k in expr.atoms(Symbol):
                     # default value is 0
-                    v = self._sweepable_mapping[k] if k in self._sweepable_mapping else 0
+                    v = self._sweepable_mapping[k.name] if k.name in self._sweepable_mapping else 0
                     expr = expr.subs(k, v)
                 if "Int" in str(type(expr)):
                     expr = int(expr)
                 else:
                     expr = float(expr)  # Float or Infinity
-                return_exprs.append(expr)
-        return return_exprs
+                return expr
 
-    def subs(self, name, value):
+    def subs(self, sym, value):
+        name = sym.name if isinstance(sym, Expr) else sym
         self._sweepable_mapping[name] = value
 
 
@@ -179,25 +183,25 @@ class Pulse(SweepableExpr):
 
     @property
     def left(self):
-        left_val = self.retrieve_value(self._left)[0]
+        left_val = self.retrieve_value(self._left)
         return left_val if np.isinf(left_val) else round(left_val)
 
     @property
     def right(self):
-        right_val = self.retrieve_value(self._right)[0]
+        right_val = self.retrieve_value(self._right)
         return right_val if np.isinf(right_val) else round(right_val)
 
     @property
     def displacement(self):
-        return self.retrieve_value(self._displacement)[0]
+        return self.retrieve_value(self._displacement)
 
     @property
     def gain(self):
-        return self.retrieve_value(self._gain)[0]
+        return self.retrieve_value(self._gain)
 
     @property
     def offset(self):
-        return self.retrieve_value(self._offset)[0]
+        return self.retrieve_value(self._offset)
 
     def _waveform(self, x):
         return np.zeros(len(x))
@@ -213,15 +217,19 @@ class Pulse(SweepableExpr):
         dumped = dict()
         dumped["type"] = self.type
         dumped["object type"] = str(type(self))
-        dumped["gain"] = self._gain
-        dumped["offset"] = self._offset
-        dumped["displacement"] = self._displacement
-        dumped["extra params"] = self.extra_params
+        dumped["gain"] = str(self._gain)
+        dumped["offset"] = str(self._offset)
+        dumped["displacement"] = str(self._displacement)
+        dumped["extra params"] = [str(p) for p in self._extra_params]
         dumped["children"] = [c.dump for c in self.children]
         return dumped
 
     @property
     def extra_params(self):
+        return self.retrieve_value(self._extra_params)
+
+    @property
+    def _extra_params(self):
         return []
 
 
@@ -256,8 +264,15 @@ class Carrier(Pulse):
         return self._waveform(np.arange(left, right))
 
     @property
-    def extra_params(self):
-        return (self.retrieve_value(*self.frequencies), self.retrieve_value(*self.phases))
+    def _extra_params(self):
+        return (self.frequencies, self.phases)
+
+    def dump(self):
+        dumped = super().dump()
+        dumped["extra params"] = [str(p)
+                                  for p in self.frequencies + self.phases]
+        return dumped
+
 
 # ------------------------------------------------
 #
@@ -279,8 +294,8 @@ class Gaussian(Pulse):
         return gauss(x, *self.extra_params)
 
     @property
-    def extra_params(self):
-        return self.retrieve_value(self.width, self.plateau)
+    def _extra_params(self):
+        return [self.width, self.plateau]
 
 
 class Drag(Pulse):
@@ -295,8 +310,8 @@ class Drag(Pulse):
         return drag(x, *self.extra_params)
 
     @property
-    def extra_params(self):
-        return self.retrieve_value(self.width)
+    def _extra_params(self):
+        return [self.width]
 
 
 class Rect(Pulse):
@@ -311,8 +326,8 @@ class Rect(Pulse):
         return rectangle(x, *self.extra_params)
 
     @property
-    def extra_params(self):
-        return self.retrieve_value(self.width)
+    def _extra_params(self):
+        return [self.width]
 
 
 class Cosine(Pulse):
@@ -329,8 +344,8 @@ class Cosine(Pulse):
         return cos(x, *self.extra_params)
 
     @property
-    def extra_params(self):
-        return self.retrieve_value(self.width, self.plateau)
+    def _extra_params(self):
+        return [self.width, self.plateau]
 
 
 class Ramp(Pulse):
@@ -348,5 +363,5 @@ class Ramp(Pulse):
         return ramp(x, *self.extra_params)
 
     @property
-    def extra_params(self):
-        return self.retrieve_value(self.width, self.amplitude_start, self.amplitude_end)
+    def _extra_params(self):
+        return [self.width, self.amplitude_start, self.amplitude_end]

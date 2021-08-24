@@ -1,8 +1,10 @@
+import src.pulses as pulses
 from .pulses import (Pulse, Carrier, relative_timing,
-                     SAMPLING_FREQUENCY, USE_RELATIVE_TIMING, PHASE_ALIGNMENT, SweepableExpr)
-from warnings import warn
+                     Sweepable, SweepableExpr)
+from .utils.pulse_reconstruction import reconstruct, str2expr, collect_sym
 import numpy as np
 import matplotlib.pyplot as plt
+import json
 
 TRIGGER_DELAY = 0
 
@@ -39,7 +41,7 @@ class Sequence(SweepableExpr):
 
     @property
     def trigger_pos(self):
-        return self.retrieve_value(self._trigger_pos)[0]
+        return self.retrieve_value(self._trigger_pos)
 
     @trigger_pos.setter
     @relative_timing
@@ -48,7 +50,7 @@ class Sequence(SweepableExpr):
 
     @property
     def period(self):
-        return self.retrieve_value(self._period)[0]
+        return self.retrieve_value(self._period)
 
     @period.setter
     @relative_timing
@@ -57,7 +59,7 @@ class Sequence(SweepableExpr):
 
     @property
     def repetitions(self):
-        return self.retrieve_value(self._repetitions)[0]
+        return self.retrieve_value(self._repetitions)
 
     @repetitions.setter
     def repetitions(self, repetitions: int):
@@ -68,13 +70,13 @@ class Sequence(SweepableExpr):
 
     def waveforms(self):
         self._update_sweepables_values()
-        offset = 0 if PHASE_ALIGNMENT == "zero" else self.trigger_pos
+        offset = 0 if pulses.PHASE_ALIGNMENT == "zero" else self.trigger_pos
         waveforms = list()
         for channel in self._pulses:
             base = Pulse(left=np.inf, right=-np.inf)
             for position, pulse, carrier in channel:
                 shifted = pulse.shift(
-                    self.retrieve_value(position)[0] - offset)
+                    self.retrieve_value(position) - offset)
                 base += shifted * carrier
             waveforms.append(base)
         # padding all channels to have the same length
@@ -104,8 +106,8 @@ class Sequence(SweepableExpr):
         fig, ax = plt.subplots()
         waveforms = self.waveforms()
         x_axis = np.arange(self.left, self.right)
-        if not USE_RELATIVE_TIMING:
-            x_axis = x_axis / SAMPLING_FREQUENCY
+        if not pulses.RELATIVE_TIMING:
+            x_axis = x_axis / pulses.SAMPLING_FREQUENCY
         for i in range(len(waveforms)):
             plt.plot(x_axis, waveforms[i], label=f"channel{i}")
         ax.plot(x_axis, self.marker_waveform(delay=False), label="marker")
@@ -125,17 +127,39 @@ class Sequence(SweepableExpr):
                     pulse.subs(k, v)
                     carrier.subs(k, v)
 
-    def dump(self):
+    def dump(self, file):
         dumped = dict()
-        dumped["trigger pos"] = self._trigger_pos
-        dumped["period"] = self._period
-        dumped["repetitions"] = self._repetitions
+        dumped["trigger pos"] = str(self._trigger_pos)
+        dumped["period"] = str(self._period)
+        dumped["repetitions"] = str(self._repetitions)
         for i, channel in enumerate(self._pulses):
             dumped[i] = dict()
             for j, (position, pulse, carrier) in enumerate(channel):
-                dumped[i][j]["position"] = position
+                dumped[i][j] = dict()
+                dumped[i][j]["position"] = str(position)
                 dumped[i][j]["pulse"] = pulse.dump()
                 dumped[i][j]["carrier"] = carrier.dump()
-        return dumped
+        with open(file, "w") as f:
+            f.writelines(json.dumps(dumped, indent=4))
 
-    # def load():
+    def load(self, file):
+        with open(file, "r") as f:
+            sym_list = set()
+            dumped = json.load(f)
+            n_channels = len(dumped) - 3
+            self.__init__(n_channels)
+            self._trigger_pos = str2expr(dumped["trigger pos"])
+            self._period = str2expr(dumped["period"])
+            self._repetitions = str2expr(dumped["repetitions"])
+            sym_list |= collect_sym(
+                (dumped["trigger pos"], dumped["period"], dumped["repetitions"]))
+            for i in range(n_channels):
+                for k, v in dumped[str(i)].items():
+                    position = str2expr(v["position"])
+                    sym_list |= collect_sym(v["position"])
+                    pulse, syms = reconstruct(v["pulse"])
+                    sym_list |= syms
+                    carrier, syms = reconstruct(v["carrier"])
+                    sym_list |= syms
+                    self.register(position, pulse, carrier, channel=i)
+            return [Sweepable(sym) for sym in sym_list]
