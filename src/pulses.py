@@ -1,32 +1,12 @@
+from src.utils.config import Configuration
 from sympy import Symbol, Expr, symbols
 from sympy.functions import Max, Min
 from .utils.math_util import *
+from .utils.config import Configuration
 import copy
 
-
-SAMPLING_FREQUENCY = 2.4e9
-RELATIVE_TIMING = True
-PHASE_ALIGNMENT = "Trigger"
+config = Configuration()
 SYMBOL_COUNT = 0
-
-
-def sampling_frequency(val: float):
-    global SAMPLING_FREQUENCY
-    SAMPLING_FREQUENCY = val
-
-
-def relative_timing(val):
-    global RELATIVE_TIMING
-    RELATIVE_TIMING = val
-
-
-def phase_alignment(val: str):
-    if val not in ("Zero", "Trigger"):
-        raise Exception(
-            "phase alignment mode should be chosen in zero/trigger")
-    else:
-        global PHASE_ALIGNMENT
-        PHASE_ALIGNMENT = val
 
 
 def relative_timing(f):
@@ -34,12 +14,13 @@ def relative_timing(f):
     def wrapper(*args, **kwargs):
         arg_index = 1  # accounting for the extra self argument
         for k, v in f.__annotations__.items():
-            if (v is int) and (not RELATIVE_TIMING):
+            if (v is int) and (not config.retrieve("RELATIVE_TIMING")):
                 if k in kwargs.keys():
-                    kwargs[k] = int(kwargs[k] * SAMPLING_FREQUENCY)
+                    kwargs[k] = kwargs[k] * \
+                        config.retrieve("SAMPLING_FREQUENCY")
                 else:
                     args = args[:arg_index] + \
-                        (int(args[arg_index] * SAMPLING_FREQUENCY),
+                        (args[arg_index] * config.retrieve("SAMPLING_FREQUENCY"),
                          ) + args[arg_index + 1:]
             arg_index = arg_index + 1
         return f(*args, **kwargs)
@@ -251,7 +232,7 @@ class Carrier(Pulse):
         self.phases = phases
 
     def _waveform(self, x):
-        x = x / SAMPLING_FREQUENCY
+        x = x / config.retrieve("SAMPLING_FREQUENCY")
         carrier = np.ones(len(x))
         frequencies, phases = self.extra_params
         for frequency, phase in zip(frequencies, phases):

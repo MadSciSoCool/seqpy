@@ -1,17 +1,9 @@
-import src.pulses as pulses
 from .pulses import (Pulse, Carrier, relative_timing,
-                     Sweepable, SweepableExpr)
+                     Sweepable, SweepableExpr, config)
 from .utils.pulse_reconstruction import reconstruct, str2expr, collect_sym
 import numpy as np
 import matplotlib.pyplot as plt
 import json
-
-TRIGGER_DELAY = 0
-
-
-def set_trigger_delay(value):
-    global TRIGGER_DELAY
-    TRIGGER_DELAY = value
 
 
 class Sequence(SweepableExpr):
@@ -69,16 +61,23 @@ class Sequence(SweepableExpr):
         return len(self.waveforms()[0])
 
     def waveforms(self):
-        self._update_sweepables_values()
-        offset = 0 if pulses.PHASE_ALIGNMENT == "zero" else self.trigger_pos
+        offset = 0 if config.retrieve(
+            "PHASE_ALIGNMENT") == "zero" else self.trigger_pos
         waveforms = list()
         for channel in self._pulses:
             base = Pulse(left=np.inf, right=-np.inf)
             for position, pulse, carrier in channel:
-                shifted = pulse.shift(
-                    self.retrieve_value(position) - offset)
-                base += shifted * carrier
+                shifting_amount = self.retrieve_value(position) - offset
+                if not config.retrieve("RELATIVE_TIMING"):
+                    shifting_amount = shifting_amount / \
+                        config.retrieve("SAMPLING_FREQUENCY")
+                shifted = pulse.shift(shifting_amount)
+                base += carrier * shifted
             waveforms.append(base)
+        # update values of sweepables
+        for k, v in self._sweepable_mapping.items():
+            for wf in waveforms:
+                wf.subs(k, v)
         # padding all channels to have the same length
         left = np.inf
         right = -np.inf
@@ -87,8 +86,8 @@ class Sequence(SweepableExpr):
                 left = wf.left
             if wf.right > right:
                 right = wf.right
-        # acount for the trigger offset
-        left = left - 1000
+        # account for the trigger offset
+        left -= 1000
         # padded to make the waveform to align with 16 samples (artifacts of zhinst)
         right += (left - right) % 16
         wf_data = [wf._pad(wf.waveform, left, right) for wf in waveforms]
@@ -106,8 +105,8 @@ class Sequence(SweepableExpr):
         fig, ax = plt.subplots()
         waveforms = self.waveforms()
         x_axis = np.arange(self.left, self.right)
-        if not pulses.RELATIVE_TIMING:
-            x_axis = x_axis / pulses.SAMPLING_FREQUENCY
+        if not config.retrieve("RELATIVE_TIMING"):
+            x_axis = x_axis / config.retrieve("SAMPLING_FREQUENCY")
         for i in range(len(waveforms)):
             plt.plot(x_axis, waveforms[i], label=f"channel{i}")
         ax.plot(x_axis, self.marker_waveform(delay=False), label="marker")
@@ -116,16 +115,9 @@ class Sequence(SweepableExpr):
 
     def marker_waveform(self, delay=True):
         base = np.zeros(self.length())
-        delay_offset = TRIGGER_DELAY if delay else 0
-        base[self.trigger_pos-self.left-delay_offset:] = 1
+        delay_offset = config.retrieve("TRIGGER_DELAY") if delay else 0
+        base[int(self.trigger_pos-self.left-delay_offset):] = 1
         return base
-
-    def _update_sweepables_values(self):
-        for k, v in self._sweepable_mapping.items():
-            for channel in self._pulses:
-                for position, pulse, carrier in channel:
-                    pulse.subs(k, v)
-                    carrier.subs(k, v)
 
     def dump(self, file):
         dumped = dict()
