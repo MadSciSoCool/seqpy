@@ -62,8 +62,8 @@ def seqc_generation(sequence: Sequence, filepath: str = ""):
     wave_length = sequence.length()
     seqc_file = SeqcFile(filepath)
     seqc_file.define_placeholder(0, wave_length)
-    seqc_file.start_main_loop(sequence._iterations)
+    seqc_file.start_main_loop(sequence.repetitions)
     seqc_file.play_wave(0)
-    seqc_file.wait(sequence._period - wave_length)  # offset to be confirmed
+    seqc_file.wait(sequence.period - wave_length)  # offset to be confirmed
     seqc_file.end_main_loop()
     return seqc_file
