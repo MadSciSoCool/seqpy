@@ -20,6 +20,7 @@ class Sequence(SweepableExpr):
         self._repetitions = 1e3  # default
         self.left = 0
         self.right = 0
+        self._changed = False
 
     @relative_timing
     def register(self, position: int, pulse: Pulse, carrier: Carrier = None, carrier_phases: tuple = (), carrier_frequencies: tuple = (), channel: "channel" = None):
@@ -30,6 +31,7 @@ class Sequence(SweepableExpr):
                 c.append((position, pulse, carrier))
         else:
             self._pulses[channel].append((position, pulse, carrier))
+        self._changed = True
 
     @property
     def trigger_pos(self):
@@ -61,39 +63,42 @@ class Sequence(SweepableExpr):
         return len(self.waveforms()[0])
 
     def waveforms(self):
-        offset = 0 if config.retrieve(
-            "PHASE_ALIGNMENT") == "zero" else self.trigger_pos
-        waveforms = list()
-        for channel in self._pulses:
-            base = Pulse(left=np.inf, right=-np.inf)
-            for position, pulse, carrier in channel:
-                shifting_amount = self.retrieve_value(position) - offset
-                if not config.retrieve("RELATIVE_TIMING"):
-                    shifting_amount = shifting_amount / \
-                        config.retrieve("SAMPLING_FREQUENCY")
-                shifted = pulse.shift(shifting_amount)
-                base += carrier * shifted
-            waveforms.append(base)
-        # update values of sweepables
-        for k, v in self._sweepable_mapping.items():
+        if self._changed:
+            offset = 0 if config.retrieve(
+                "PHASE_ALIGNMENT") == "zero" else self.trigger_pos
+            waveforms = list()
+            for channel in self._pulses:
+                base = Pulse(left=np.inf, right=-np.inf)
+                for position, pulse, carrier in channel:
+                    shifting_amount = self.retrieve_value(position) - offset
+                    if not config.retrieve("RELATIVE_TIMING"):
+                        shifting_amount = shifting_amount / \
+                            config.retrieve("SAMPLING_FREQUENCY")
+                    shifted = pulse.shift(shifting_amount)
+                    base += carrier * shifted
+                waveforms.append(base)
+            # update values of sweepables
+            for k, v in self._sweepable_mapping.items():
+                for wf in waveforms:
+                    wf.subs(k, v)
+            # padding all channels to have the same length
+            left = np.inf
+            right = -np.inf
             for wf in waveforms:
-                wf.subs(k, v)
-        # padding all channels to have the same length
-        left = np.inf
-        right = -np.inf
-        for wf in waveforms:
-            if wf.left < left:
-                left = wf.left
-            if wf.right > right:
-                right = wf.right
-        # account for the trigger offset
-        left -= 1000
-        # padded to make the waveform to align with 16 samples (artifacts of zhinst)
-        right += (left - right) % 16
-        wf_data = [wf._pad(wf.waveform, left, right) for wf in waveforms]
-        self.right = right + offset
-        self.left = left + offset
-        return [self._cap(wf) for wf in wf_data]
+                if wf.left < left:
+                    left = wf.left
+                if wf.right > right:
+                    right = wf.right
+            # account for the trigger offset
+            left -= 1000
+            # padded to make the waveform to align with 16 samples (artifacts of zhinst)
+            right += (left - right) % 16
+            wf_data = [wf._pad(wf.waveform, left, right) for wf in waveforms]
+            self.right = right + offset
+            self.left = left + offset
+            self._waveforms = [self._cap(wf) for wf in wf_data]
+            self._changed = False
+        return self._waveforms
 
     @staticmethod
     def _cap(waveform):

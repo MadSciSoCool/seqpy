@@ -1,4 +1,3 @@
-from ..sequence import Sequence
 from os import path
 
 
@@ -57,7 +56,7 @@ class SeqcFile:
             self.file_string += f"{str}\n"
 
 
-def seqc_generation(sequence: Sequence, filepath: str = ""):
+def seqc_generation(sequence, filepath=""):
     # write the .seqC file
     wave_length = sequence.length()
     seqc_file = SeqcFile(filepath)
