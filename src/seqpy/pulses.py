@@ -3,8 +3,10 @@ from sympy.functions import Max, Min
 from .utils.math_util import *
 from .utils.config import Configuration
 import copy
+import os
 
-config = Configuration()
+config = Configuration(os.path.join(
+    os.path.expanduser("~"), "configure.json"))
 SYMBOL_COUNT = 0
 
 

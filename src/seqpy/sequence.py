@@ -21,6 +21,8 @@ class Sequence(SweepableExpr):
         self.left = 0
         self.right = 0
         self._changed = False
+        self._waveforms = list()
+        [self._waveforms.append(np.array([])) for i in range(n_channels)]
 
     @relative_timing
     def register(self, position: int, pulse: Pulse, carrier: Carrier = None, carrier_phases: tuple = (), carrier_frequencies: tuple = (), channel: "channel" = None):

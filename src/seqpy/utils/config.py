@@ -30,7 +30,7 @@ class Configuration:
             self._config = loaded_config
 
     def dump_config(self):
-        with open(self._path, "w") as f:
+        with open(self._path, "w+") as f:
             f.writelines(json.dumps(self._config, indent=4))
 
     def update(self, key, value):
@@ -49,6 +49,14 @@ class Configuration:
         if key not in self._supported:
             raise Exception(f"{key} is not a supported configuration")
         return self._config[key]
+
+    def set_path(self, path):
+        # check for permission
+        if os.access(os.path.split(path)[0], os.W_OK):
+            self._path = path
+        else:
+            warnings.warn(
+                "Do not have access to the directory, configuration path has not been modified")
 
     @staticmethod
     def _validate(config):

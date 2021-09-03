@@ -1,12 +1,13 @@
-import sys
-sys.path.append(r"/Users/pan/Projects/seqpy/zhinst")
-# here add path to zhinst supporting functions
 from BaseDriver import LabberDriver, Error
 import zhinst.toolkit as tk
-import zhinst.utils as zu
-from zhinst_awg_wrapper import update_zhinst_awg
-from seqc_generation import seqc_generation
+from helpers import update_zhinst_awg
 from seqpy import *
+import numpy as np
+import os
+import sys
+sys.path.append(r"D:\Labber\Drivers\Zurich_Instruments_HDAWG_SeqPy")
+
+# here add path to zhinst supporting functions
 
 
 # change this value in case you are not using 'localhost'
@@ -16,9 +17,9 @@ HOST = "localhost"
 class Driver(LabberDriver):
     """ This class implements a Labber driver"""
 
-    def __init__(self) -> None:
-        super().__init__()
-        self._sequence = Sequence()
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.sequence = Sequence()
 
     def performOpen(self, options={}):
         """Perform the operation of opening the instrument connection"""
@@ -62,11 +63,16 @@ class Driver(LabberDriver):
 
         # sequencer start / stop
         if quant.name.endswith("Run"):
-            self.update_zhinst_awg(sequence=self._sequence)
+            self.update_zhinst_awg()
             value = self.awg_start_stop(quant, value)
 
-        if self.isFinalCall(options):
-            self.update_zhinst_awg(sequence=self._sequence)
+        # compilation button
+        if quant.name.endswith("Update AWG"):
+            self.update_zhinst_awg()
+
+        # TODO: check what happened in a measurement cycle
+        if self.isFinalCall(options) and not self.isFirstCall(options):
+            self.update_zhinst_awg()
             # if any of AWGs is in the 'Send Trigger' mode, start this AWG and wait until it stops
             self.awg_start_stop(quant, 1)
 
@@ -77,13 +83,21 @@ class Driver(LabberDriver):
         return the actual value set by the instrument"""
         if quant.get_cmd:
             return self.controller._get(quant.get_cmd)
-        elif quant.name.startwith("Waveforms"):
+        elif quant.name.startswith("Waveforms"):
+            self.update_sequence()
             if "Channel1" in quant.name:
-                return self._sequence.waveforms()[0]
+                data = self.sequence.waveforms()[0]
             elif "Channel2" in quant.name:
-                return self._sequence.waveforms()[0]
+                data = self.sequence.waveforms()[1]
             elif "Marker" in quant.name:
-                return self._sequence.marker_waveform(delay=False)
+                data = self.sequence.marker_waveform(delay=False)
+            left = self.sequence.left
+            right = self.sequence.right
+            if self.getValue("SeqPy - Display"):
+                freq = config.retrieve("SAMPLING_FREQUENCY")
+                left = left / freq
+                right = right / freq
+            return quant.getTraceDict(data, x0=left, x1=right)
         else:
             return quant.getValue()
 
@@ -110,15 +124,28 @@ class Driver(LabberDriver):
         return self.controller.awgs[0].is_running
 
     def update_sequence(self):
-        self._sequence.load(self.getValue("SeqPy - Json Path"))
-        self._sequence.period = self.getValue("SeqPy - Period")
-        self._sequence.repetitions = int(self.getValue("SeqPy - Repetitions"))
-        for i in range(3):
-            key = self.getValue(f"Seqpy - Sweepable {i+1} name")
-            value = self.getValue(f"Seqpy - Sweepable {i+1} name")
-            if key is not "":
-                self._sequence.subs(key, value)
+        json_path = self.getValue("SeqPy - Json Path")
+        if json_path:
+            self.sequence.load(json_path)
+            # here the units is in seconds so use absolute timing
+            original = config.retrieve("RELATIVE_TIMING")
+            config.update("RELATIVE_TIMING", False)
+            self.sequence.period = self.getValue("SeqPy - Period")
+            config.update("RELATIVE_TIMING", original)
+            self.sequence.repetitions = int(
+                self.getValue("SeqPy - Repetitions"))
 
-    def update_zhinst_awg(self, sequence, path=""):
-        self.update_sequence()
-        update_zurich_awg(self.controller.awgs[0], self._sequence, path="")
+            for i in range(3):
+                key = self.getValue(f"SeqPy - Sweepable {i+1} Name")
+                value = self.getValue(f"SeqPy - Sweepable {i+1} Value")
+                if key is not "":
+                    self.sequence.subs(key, value)
+
+    def update_zhinst_awg(self):
+        json_path = self.getValue("SeqPy - Json Path")
+        if json_path:
+            # require for using trigger signal
+            self.setValue("Marker Out - Signal 1", 4)
+            self.update_sequence()
+            update_zhinst_awg(
+                self.controller.awgs[0], self.sequence, path=os.path.expanduser("~"))
