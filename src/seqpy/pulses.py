@@ -6,26 +6,7 @@ import copy
 import os
 
 config = Configuration(os.path.join(
-    os.path.expanduser("~"), "configure.json"))
-SYMBOL_COUNT = 0
-
-
-def relative_timing(f):
-    @wraps(f)
-    def wrapper(*args, **kwargs):
-        arg_index = 1  # accounting for the extra self argument
-        for k, v in f.__annotations__.items():
-            if (v is int) and (not config.retrieve("RELATIVE_TIMING")):
-                if k in kwargs.keys():
-                    kwargs[k] = kwargs[k] * \
-                        config.retrieve("SAMPLING_FREQUENCY")
-                else:
-                    args = args[:arg_index] + \
-                        (args[arg_index] * config.retrieve("SAMPLING_FREQUENCY"),
-                         ) + args[arg_index + 1:]
-            arg_index = arg_index + 1
-        return f(*args, **kwargs)
-    return wrapper
+    os.path.expanduser("~"), "seqpy_config.json"))
 
 
 class Sweepable(Symbol):
@@ -36,11 +17,7 @@ class Sweepable(Symbol):
         Symbol.__init__(name)
 
 
-def sweepables(number=1):
-    global SYMBOL_COUNT
-    names = " ".join(["x" + str(i)
-                      for i in range(SYMBOL_COUNT, int(number + SYMBOL_COUNT))])
-    SYMBOL_COUNT += number
+def sweepables(names):
     syms = symbols(names)
     if isinstance(syms, Symbol):
         return Sweepable(syms.name)
@@ -97,12 +74,12 @@ class Pulse(SweepableExpr):
             waveform = np.append(waveform, np.zeros(right - self.right))
         return waveform
 
-    @relative_timing
     def shift(self, length: int):
         new = copy.deepcopy(self)
+        samp_freq = config.retrieve("SAMPLING_FREQUENCY")
         new._displacement += length
-        new._left += length
-        new._right += length
+        new._left += length*samp_freq
+        new._right += length*samp_freq
         return new
 
     def __add__(self, other):
@@ -143,10 +120,12 @@ class Pulse(SweepableExpr):
 
     @property
     def waveform(self):
+        samp_freq = config.retrieve("SAMPLING_FREQUENCY")
         if self.is_atom:
             if self.left > self.right:
                 return np.array([])
-            x = np.arange(self.left, self.right) - self.displacement
+            x = np.arange(self.left, self.right) - \
+                self.displacement * samp_freq  # in sample
             return self._waveform(x) * self.gain + self.offset
         else:
             # -------------- Tree traversing --------------
@@ -264,16 +243,16 @@ class Carrier(Pulse):
 
 
 class Gaussian(Pulse):
-    @relative_timing
     def __init__(self, width: int, plateau: int = 0, cutoff: float = 5.) -> None:
         self.width = width
         self.plateau = plateau
-        left = -plateau/2 - cutoff*width/2
+        left = (-plateau/2 - cutoff*width/2) * \
+            config.retrieve("SAMPLING_FREQUENCY")
         right = -left + 1
         super().__init__(left, right)
 
     def _waveform(self, x):
-        return gauss(x, *self.extra_params)
+        return gauss(x, *np.array(self.extra_params)*config.retrieve("SAMPLING_FREQUENCY"))
 
     @property
     def _extra_params(self):
@@ -281,15 +260,14 @@ class Gaussian(Pulse):
 
 
 class Drag(Pulse):
-    @relative_timing
     def __init__(self, width: int, cutoff: float = 5.) -> None:
         self.width = width
-        left = -cutoff*width/2
+        left = -cutoff*width*config.retrieve("SAMPLING_FREQUENCY")/2
         right = -left + 1
         super().__init__(left, right)
 
     def _waveform(self, x):
-        return drag(x, *self.extra_params)
+        return drag(x, *np.array(self.extra_params)*config.retrieve("SAMPLING_FREQUENCY"))
 
     @property
     def _extra_params(self):
@@ -297,15 +275,14 @@ class Drag(Pulse):
 
 
 class Rect(Pulse):
-    @relative_timing
     def __init__(self, width: int) -> None:
         self.width = width
-        left = -width/2
+        left = -width*config.retrieve("SAMPLING_FREQUENCY")/2
         right = -left + 1
         super().__init__(left, right)
 
     def _waveform(self, x):
-        return rectangle(x, *self.extra_params)
+        return rectangle(x, *np.array(self.extra_params)*config.retrieve("SAMPLING_FREQUENCY"))
 
     @property
     def _extra_params(self):
@@ -313,17 +290,16 @@ class Rect(Pulse):
 
 
 class Cosine(Pulse):
-    @relative_timing
     def __init__(self, width: int, plateau: int = 0) -> None:
         self.width = width
         self.plateau = plateau
-        left = -plateau / 2 - width
+        left = (-plateau / 2 - width)*config.retrieve("SAMPLING_FREQUENCY")
         right = -left + 1
         self.is_atom = True
         super().__init__(left, right)
 
     def _waveform(self, x):
-        return cos(x, *self.extra_params)
+        return cos(x, *np.array(self.extra_params)*config.retrieve("SAMPLING_FREQUENCY"))
 
     @property
     def _extra_params(self):
@@ -331,18 +307,17 @@ class Cosine(Pulse):
 
 
 class Ramp(Pulse):
-    @relative_timing
     def __init__(self, width: int, amplitude_start: float, amplitude_end: float) -> None:
         self.width = width
         self.amplitude_start = amplitude_start
         self.amplitude_end = amplitude_end
-        left = -width / 2
+        left = -width*config.retrieve("SAMPLING_FREQUENCY") / 2
         right = -left + 1
         self.is_atom = True
         super().__init__(left, right)
 
     def _waveform(self, x):
-        return ramp(x, *self.extra_params)
+        return ramp(x, *np.array(self.extra_params)*config.retrieve("SAMPLING_FREQUENCY"))
 
     @property
     def _extra_params(self):

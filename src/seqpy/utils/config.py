@@ -7,11 +7,10 @@ import warnings
 
 class Configuration:
 
-    def __init__(self, path=r"./configure.json") -> None:
+    def __init__(self, path=r"./seqpy_config.json") -> None:
         self._path = path
         self._config = {
             "SAMPLING_FREQUENCY": 2.4e9,
-            "RELATIVE_TIMING": True,
             "PHASE_ALIGNMENT": "Trigger",
             "TRIGGER_DELAY": 0
         }
@@ -62,7 +61,6 @@ class Configuration:
     def _validate(config):
         assert(config["PHASE_ALIGNMENT"] in ("Trigger", "Zero"))
         assert(isinstance(config["TRIGGER_DELAY"], int))
-        assert(isinstance(config["RELATIVE_TIMING"], bool))
         assert(isinstance(config["SAMPLING_FREQUENCY"], float) or
                isinstance(config["SAMPLING_FREQUENCY"], int))
         assert(config["SAMPLING_FREQUENCY"] > 0)

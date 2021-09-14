@@ -1,5 +1,4 @@
-from .pulses import (Pulse, Carrier, relative_timing,
-                     Sweepable, SweepableExpr, config)
+from .pulses import (Pulse, Carrier, Sweepable, SweepableExpr, config)
 from .utils.pulse_reconstruction import reconstruct, str2expr, collect_sym
 import numpy as np
 import matplotlib.pyplot as plt
@@ -10,13 +9,14 @@ class Sequence(SweepableExpr):
     def __init__(self, n_channels: int = 1):
         super().__init__()
         n_channels = int(n_channels)
-        if n_channels < 0 or n_channels > 2:
+        if n_channels < 0 or n_channels > 8:
             raise Exception(
                 "n_channels could only be a postive integer at most 8")
         self._pulses = list()
         [self._pulses.append(list()) for i in range(n_channels)]
         self._trigger_pos = 0
-        self._period = 1e-6 * 2.4e9  # default
+        self._period = 100e-6 * \
+            config.retrieve("SAMPLING_FREQUENCY")  # default
         self._repetitions = 1e3  # default
         self.left = 0
         self.right = 0
@@ -24,8 +24,7 @@ class Sequence(SweepableExpr):
         self._waveforms = list()
         [self._waveforms.append(np.array([])) for i in range(n_channels)]
 
-    @relative_timing
-    def register(self, position: int, pulse: Pulse, carrier: Carrier = None, carrier_phases: tuple = (), carrier_frequencies: tuple = (), channel: "channel" = None):
+    def register(self, position, pulse, carrier=None, carrier_phases=(), carrier_frequencies=(), channel=None):
         if not carrier:
             carrier = Carrier(carrier_phases, carrier_frequencies)
         if not channel and not isinstance(channel, int):
@@ -40,7 +39,6 @@ class Sequence(SweepableExpr):
         return self.retrieve_value(self._trigger_pos)
 
     @trigger_pos.setter
-    @relative_timing
     def trigger_pos(self, position: int):
         self._trigger_pos = position
 
@@ -49,7 +47,6 @@ class Sequence(SweepableExpr):
         return self.retrieve_value(self._period)
 
     @period.setter
-    @relative_timing
     def period(self, period: int):
         self._period = period
 
@@ -66,17 +63,16 @@ class Sequence(SweepableExpr):
 
     def waveforms(self):
         if self._changed:
+            samp_freq = config.retrieve("SAMPLING_FREQUENCY")
             offset = 0 if config.retrieve(
-                "PHASE_ALIGNMENT") == "zero" else self.trigger_pos
+                "PHASE_ALIGNMENT") == "Zero" else self.trigger_pos  # in time
             waveforms = list()
             for channel in self._pulses:
                 base = Pulse(left=np.inf, right=-np.inf)
                 for position, pulse, carrier in channel:
-                    shifting_amount = self.retrieve_value(position) - offset
-                    if not config.retrieve("RELATIVE_TIMING"):
-                        shifting_amount = shifting_amount / \
-                            config.retrieve("SAMPLING_FREQUENCY")
-                    shifted = pulse.shift(shifting_amount)
+                    shifting_amount = self.retrieve_value(
+                        position) - offset  # in time
+                    shifted = pulse.shift(shifting_amount)  # in time
                     base += carrier * shifted
                 waveforms.append(base)
             # update values of sweepables
@@ -91,13 +87,21 @@ class Sequence(SweepableExpr):
                     left = wf.left
                 if wf.right > right:
                     right = wf.right
-            # account for the trigger offset
-            left -= 1000
+            # the range should include trigger position
+            delay_offset = config.retrieve(
+                "TRIGGER_DELAY")*samp_freq  # in samples
+            trig_pos = self.trigger_pos*samp_freq if config.retrieve(
+                "PHASE_ALIGNMENT") == "Zero" else 0  # in samples
+            trig_left = trig_pos - delay_offset - 100  # in samples
+            trig_right = trig_pos - delay_offset + 100  # in samples
+            left = min(left, trig_left)
+            right = max(right, trig_right)
             # padded to make the waveform to align with 16 samples (artifacts of zhinst)
             right += (left - right) % 16
-            wf_data = [wf._pad(wf.waveform, left, right) for wf in waveforms]
-            self.right = right + offset
-            self.left = left + offset
+            wf_data = [wf._pad(wf.waveform, int(left), int(right))
+                       for wf in waveforms]
+            self.right = right + offset*samp_freq  # in sample
+            self.left = left + offset*samp_freq  # in sample
             self._waveforms = [self._cap(wf) for wf in wf_data]
             self._changed = False
         return self._waveforms
@@ -111,9 +115,8 @@ class Sequence(SweepableExpr):
     def plot(self):
         fig, ax = plt.subplots()
         waveforms = self.waveforms()
-        x_axis = np.arange(self.left, self.right)
-        if not config.retrieve("RELATIVE_TIMING"):
-            x_axis = x_axis / config.retrieve("SAMPLING_FREQUENCY")
+        x_axis = np.arange(self.left, self.right) / \
+            config.retrieve("SAMPLING_FREQUENCY")
         for i in range(len(waveforms)):
             plt.plot(x_axis, waveforms[i], label=f"channel{i}")
         ax.plot(x_axis, self.marker_waveform(delay=False), label="marker")
@@ -121,9 +124,11 @@ class Sequence(SweepableExpr):
         return fig
 
     def marker_waveform(self, delay=True):
+        samp_freq = config.retrieve("SAMPLING_FREQUENCY")
         base = np.zeros(self.length())
-        delay_offset = config.retrieve("TRIGGER_DELAY") if delay else 0
-        base[int(self.trigger_pos-self.left-delay_offset):] = 1
+        delay_offset = config.retrieve(
+            "TRIGGER_DELAY")*samp_freq if delay else 0  # in samples
+        base[int(self.trigger_pos*samp_freq - self.left-delay_offset):] = 1
         return base
 
     def dump(self, file):
