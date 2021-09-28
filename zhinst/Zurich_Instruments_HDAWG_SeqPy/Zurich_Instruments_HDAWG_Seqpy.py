@@ -34,7 +34,6 @@ class Driver(LabberDriver):
         )
         self.controller.setup()
         self.controller.connect_device()
-        self.last_length = [0] * 8
 
     def performClose(self, bError=False, options={}):
         """Perform the close instrument connection operation"""
@@ -70,8 +69,12 @@ class Driver(LabberDriver):
         if quant.name.endswith("Update AWG"):
             self.update_zhinst_awg()
 
+        if quant.name.endswith("Sample Clock"):
+            config.update("SAMPLING_FREQUENCY", value)
+
         # TODO: check what happened in a measurement cycle
-        if self.isFinalCall(options) and not self.isFirstCall(options):
+#        if self.isFinalCall(options) and not self.isFirstCall(options):
+        if self.isFinalCall(options):
             self.update_zhinst_awg()
             # if any of AWGs is in the 'Send Trigger' mode, start this AWG and wait until it stops
             self.awg_start_stop(quant, 1)
@@ -85,10 +88,17 @@ class Driver(LabberDriver):
             return self.controller._get(quant.get_cmd)
         elif quant.name.startswith("Waveforms"):
             self.update_sequence()
+            n_channels = len(self.sequence.waveforms())
             if "Channel1" in quant.name:
-                data = self.sequence.waveforms()[0]
+                if n_channels >= 1:
+                    data = self.sequence.waveforms()[0]
+                else:
+                    data = np.zeros(self.sequence.length())
             elif "Channel2" in quant.name:
-                data = self.sequence.waveforms()[1]
+                if n_channels >= 2:
+                    data = self.sequence.waveforms()[1]
+                else:
+                    data = np.zeros(self.sequence.length())
             elif "Marker" in quant.name:
                 data = self.sequence.marker_waveform(delay=False)
             left = self.sequence.left
@@ -128,10 +138,7 @@ class Driver(LabberDriver):
         if json_path:
             self.sequence.load(json_path)
             # here the units is in seconds so use absolute timing
-            original = config.retrieve("RELATIVE_TIMING")
-            config.update("RELATIVE_TIMING", False)
             self.sequence.period = self.getValue("SeqPy - Period")
-            config.update("RELATIVE_TIMING", original)
             self.sequence.repetitions = int(
                 self.getValue("SeqPy - Repetitions"))
 
@@ -147,5 +154,11 @@ class Driver(LabberDriver):
             # require for using trigger signal
             self.setValue("Marker Out - Signal 1", 4)
             self.update_sequence()
-            update_zhinst_awg(
-                self.controller.awgs[0], self.sequence, path=os.path.expanduser("~"))
+            # to avoid some random error seen in the measurement
+            for i in range(15):
+                try:
+                    update_zhinst_awg(
+                        self.controller.awgs[0], self.sequence, path=os.path.expanduser("~"))
+                    break
+                except Exception:
+                    pass
