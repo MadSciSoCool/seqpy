@@ -1,6 +1,6 @@
+from helpers import update_zhinst_awg
 from BaseDriver import LabberDriver, Error
 import zhinst.toolkit as tk
-from helpers import update_zhinst_awg
 from seqpy import *
 import numpy as np
 import os
@@ -89,24 +89,19 @@ class Driver(LabberDriver):
         elif quant.name.startswith("Waveforms"):
             self.update_sequence()
             n_channels = len(self.sequence.waveforms())
-            if "Channel1" in quant.name:
-                if n_channels >= 1:
-                    data = self.sequence.waveforms()[0]
-                else:
+            if "Channel" in quant.name:
+                index = int(quant.name[-1])
+                if index > n_channels:
                     data = np.zeros(self.sequence.length())
-            elif "Channel2" in quant.name:
-                if n_channels >= 2:
-                    data = self.sequence.waveforms()[1]
                 else:
-                    data = np.zeros(self.sequence.length())
+                    data = self.sequence.waveforms()[index - 1]
             elif "Marker" in quant.name:
                 data = self.sequence.marker_waveform(delay=False)
             left = self.sequence.left
             right = self.sequence.right
-            if self.getValue("SeqPy - Display"):
-                freq = config.retrieve("SAMPLING_FREQUENCY")
-                left = left / freq
-                right = right / freq
+            freq = config.retrieve("SAMPLING_FREQUENCY")
+            left = left / freq
+            right = right / freq
             return quant.getTraceDict(data, x0=left, x1=right)
         else:
             return quant.getValue()
@@ -137,11 +132,6 @@ class Driver(LabberDriver):
         json_path = self.getValue("SeqPy - Json Path")
         if json_path:
             self.sequence.load(json_path)
-            # here the units is in seconds so use absolute timing
-            self.sequence.period = self.getValue("SeqPy - Period")
-            self.sequence.repetitions = int(
-                self.getValue("SeqPy - Repetitions"))
-
             for i in range(3):
                 key = self.getValue(f"SeqPy - Sweepable {i+1} Name")
                 value = self.getValue(f"SeqPy - Sweepable {i+1} Value")
@@ -158,7 +148,12 @@ class Driver(LabberDriver):
             for i in range(15):
                 try:
                     update_zhinst_awg(
-                        self.controller.awgs[0], self.sequence, path=os.path.expanduser("~"))
+                        self.controller,
+                        self.sequence,
+                        self.getValue("SeqPy - Period") *
+                        config.retrieve("SAMPLING_FREQUENCY"),
+                        int(self.getValue("SeqPy - Repetitions")),
+                        path=os.path.expanduser("~"))
                     break
-                except Exception:
-                    pass
+                except Exception as e:
+                    raise(e)  # TODO: investigate the random error

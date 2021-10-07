@@ -9,9 +9,8 @@ class Sequence(SweepableExpr):
     def __init__(self, n_channels: int = 1):
         super().__init__()
         n_channels = int(n_channels)
-        if n_channels < 0 or n_channels > 8:
-            raise Exception(
-                "n_channels could only be a postive integer at most 8")
+        if n_channels < 0:
+            raise Exception("n_channels could only be a postive integer")
         self._pulses = list()
         [self._pulses.append(list()) for i in range(n_channels)]
         self._trigger_pos = 0
@@ -41,22 +40,6 @@ class Sequence(SweepableExpr):
     @trigger_pos.setter
     def trigger_pos(self, position: int):
         self._trigger_pos = position
-
-    @property
-    def period(self):
-        return self.retrieve_value(self._period)
-
-    @period.setter
-    def period(self, period: int):
-        self._period = period
-
-    @property
-    def repetitions(self):
-        return self.retrieve_value(self._repetitions)
-
-    @repetitions.setter
-    def repetitions(self, repetitions: int):
-        self._repetitions = repetitions
 
     def length(self):
         return len(self.waveforms()[0])
