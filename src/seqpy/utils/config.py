@@ -11,6 +11,7 @@ class Configuration:
         self._path = path
         self._config = {
             "SAMPLING_FREQUENCY": 2.4e9,
+            # "QA_SAMPLING_FREQUENCY": 1.8e9,
             "PHASE_ALIGNMENT": "Trigger",
             "TRIGGER_DELAY": 0
         }
@@ -61,6 +62,8 @@ class Configuration:
     def _validate(config):
         assert(config["PHASE_ALIGNMENT"] in ("Trigger", "Zero"))
         assert(isinstance(config["TRIGGER_DELAY"], int))
-        assert(isinstance(config["SAMPLING_FREQUENCY"], float) or
-               isinstance(config["SAMPLING_FREQUENCY"], int))
-        assert(config["SAMPLING_FREQUENCY"] > 0)
+        # for key in ("SAMPLING_FREQUENCY", "QA_SAMPLING_FREQUENCY"):
+        for key in ("SAMPLING_FREQUENCY",):
+            assert(isinstance(config[key], float)
+                   or isinstance(config[key], int))
+            assert(config[key] > 0)

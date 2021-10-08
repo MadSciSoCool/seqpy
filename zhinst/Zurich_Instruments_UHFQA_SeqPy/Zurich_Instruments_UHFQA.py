@@ -1,9 +1,8 @@
-import time
+from seqpy import *
 import numpy as np
 from BaseDriver import LabberDriver, Error
-
 import zhinst.toolkit as tk
-
+import sys
 
 # change this value in case you are not using 'localhost'
 HOST = "localhost"
@@ -19,7 +18,8 @@ class Driver(LabberDriver):
             interface = "1GbE"
         # initialize controller and connect
         self.controller = tk.UHFQA(
-            self.comCfg.name, self.comCfg.address[:7], interface=interface, host=HOST
+            self.comCfg.name, self.comCfg.address[:
+                                                  7], interface=interface, host=HOST
         )
         self.controller.setup()
         self.controller.connect_device()
@@ -74,8 +74,8 @@ class Driver(LabberDriver):
             value = self.controller.integration_time()
 
         # sequencer start / stop
-        # if quant.name.endswith("Run"):
-            # value = self.awg_start_stop(quant, value)
+        if quant.name.endswith("Run"):
+            value = self.awg_start_stop(quant, value)
 
         # all channel parameters
         if quant.name.startswith("Channel"):
@@ -97,37 +97,10 @@ class Driver(LabberDriver):
                 self.sequencer_updated = True
             if name[3] == "Enable":
                 channel.enable() if value else channel.disable()
-                
-        # mark sequencer as updated to be recompiled
-        # if quant.name.startswith("Sequencer") or quant.name in [
-            # "QA Results - Length",
-            # "QA Results - HW Averages",
-        # ]:
-            # self.sequencer_updated = True
 
-        # # sequencer waveform (for 'Simple' sequence)
-        # if quant.name.startswith("Waveform"):
-        #     ch = int(quant.name[-1]) - 1
-        #     self.waveforms_updated[ch] = True
-        #     if not self.isHardwareLoop(options):
-        #         data = value["y"]
-        #         self.replace_waveform = (
-        #             True if len(data) == self.last_length[ch] else False
-        #         )
-        #         self.last_length[ch] = len(data)
-
-        # if self.isFinalCall(options):
-            # if self.sequencer_updated:
-                # if any sequencers are marked as updated
-                # if loop_index + 1 == n_HW_loop:
-                    # self.update_sequencers()
-            # if any(self.waveforms_updated):
-                # queue the waveforms marked as updated to the respective AWG
-                # self.queue_waveforms(options=options)
-            # if any(self.waveforms_updated) or self.sequencer_updated:
-                # sequencer needs to be recompiled
-                # if loop_index == 0:
-                    # self.compile_sequencers()
+        # compilation button
+        if quant.name.endswith("Update AWG"):
+            self.update_zhinst_qa()
 
         # return the value that was set on the device ...
         return value
@@ -166,14 +139,16 @@ class Driver(LabberDriver):
             self.performArm()
             while True:
                 if self.controller._get('/qas/0/monitor/acquired') == 0:
-                    value = quant.getTraceDict(self.controller._get('/qas/0/monitor/inputs/0/wave'), dt=1/1.8e9)
+                    value = quant.getTraceDict(self.controller._get(
+                        '/qas/0/monitor/inputs/0/wave'), dt=1/1.8e9)
                     break
             return value
         elif quant.name == 'QA Monitor - Input 2':
             self.performArm()
             while True:
                 if self.controller._get('/qas/0/monitor/acquired') == 0:
-                    value = quant.getTraceDict(self.controller._get('/qas/0/monitor/inputs/1/wave'), dt=1/1.8e9)
+                    value = quant.getTraceDict(self.controller._get(
+                        '/qas/0/monitor/inputs/1/wave'), dt=1/1.8e9)
                     break
             return value
         else:
@@ -212,61 +187,6 @@ class Driver(LabberDriver):
             self.controller.awg.wait_done()
         return self.controller.awg.is_running
 
-    def update_sequencers(self):
-        """Handles the 'set_sequence_params(...)' for the AWGs."""
-        if self.sequencer_updated:
-            params = self.get_sequence_params()
-            if params["sequence_type"] != "None":
-                self.controller.awg.set_sequence_params(**params)
-
-    def get_sequence_params(self):
-        """Retrieves all sequence parameters from Labber quantities and returns 
-        them as a dictionary, ready for `set_sequence_params(...)`."""
-        base_name = f"Sequencer - "
-        params = dict(
-            sequence_type=self.getValue(base_name + "Sequence"),
-            period=self.getValue(base_name + "Period"),
-            trigger_mode=self.getValue(base_name + "Trigger Mode"),
-            alignment=self.getValue(base_name + "Alignment"),
-            trigger_delay=self.getValue(base_name + "Trigger Delay"),
-            readout_length=self.getValue(base_name + "Readout Length"),
-            clock_rate=1.8e9,
-            latency=self.getValue(base_name + "Latency"),
-            dead_time=self.getValue(base_name + "Dead Time"),
-        )
-        if params["sequence_type"] == "Custom":
-            params.update(path=self.getValue("Custom Sequence - Path"))
-        if params["sequence_type"] == "Pulsed Spectroscopy":
-            params.update(
-                pulse_length=self.getValue("Sequencer - Pulse Length"),
-                pulse_amplitude=self.getValue("Sequencer - Pulse Amplitude"),
-            )
-        length = self.controller._get("qas/0/result/length")
-        avgs = self.controller._get("qas/0/result/averages")
-        params.update(repetitions=length * avgs)
-        return params
-
-    def queue_waveforms(self, options={}):
-        """Queue waveforms or replace waveforms on AWGs."""
-        loop_index, _ = self.getHardwareLoopIndex(options)
-        if loop_index == 0 and not self.replace_waveform:
-            self.controller.awg.reset_queue()
-        if any(self.waveforms_updated):
-            w1 = self.getValueArray("Waveform 1")
-            w2 = self.getValueArray("Waveform 1")
-            if self.replace_waveform:
-                self.controller.awg.replace_waveform(w1, w2, i=loop_index)
-            else:
-                self.controller.awg.queue_waveform(w1, w2)
-
-    def compile_sequencers(self):
-        """Handles the compilation and waveform upload of the AWGs."""
-        sequence_type = self.getValue("Sequencer - Sequence")
-        if sequence_type != "None" and not self.replace_waveform:
-            self.controller.awg.compile()
-        if sequence_type == "Simple":
-            self.controller.awg.upload_waveforms()
-
     def set_cosstalk_matrix(self, matrix):
         """Set the crosstalk matrix as a 2D numpy array."""
         rows, cols = matrix.shape
@@ -284,3 +204,18 @@ class Driver(LabberDriver):
         real = np.mean(np.real(data1))
         imag = np.mean(np.real(data2))
         return real + 1j * imag
+
+    def update_zhinst_qa(self):
+        json_path = self.getValue("SeqPy - Json Path")
+        if json_path:
+            seq = Sequence()
+            seq.load(json_path)
+            for i in range(15):
+                old_samp_freq = config.retrieve("SAMPLING_FREQUENCY")
+                config.update("SAMPLING_FREQUENCY", 1.8e9)
+                try:
+                    update_zhinst_qa(self.controller, seq)
+                except Exception as e:
+                    raise(e)
+                finally:
+                    config.update("SAMPLING_FREQUENCY", old_samp_freq)

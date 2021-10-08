@@ -1,13 +1,18 @@
-from helpers import update_zhinst_awg
 from BaseDriver import LabberDriver, Error
 import zhinst.toolkit as tk
 from seqpy import *
 import numpy as np
 import os
 import sys
-sys.path.append(r"D:\Labber\Drivers\Zurich_Instruments_HDAWG_SeqPy")
+import hashlib
 
-# here add path to zhinst supporting functions
+
+def hash_file(filename, blocksize=65536):
+    with open(filename, "rb") as f:
+        file_hash = hashlib.blake2b()
+        for block in iter(lambda: f.read(blocksize), b""):
+            file_hash.update(block)
+    return file_hash.hexdigest()
 
 
 # change this value in case you are not using 'localhost'
@@ -20,6 +25,9 @@ class Driver(LabberDriver):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.sequence = Sequence()
+        # change flag for awg updating
+        self.change_flag = False
+        self.old_hash = ""
 
     def performOpen(self, options={}):
         """Perform the operation of opening the instrument connection"""
@@ -71,6 +79,9 @@ class Driver(LabberDriver):
 
         if quant.name.endswith("Sample Clock"):
             config.update("SAMPLING_FREQUENCY", value)
+
+        if quant.name.endswith("SeqPy"):
+            self.change_flag = True
 
         # TODO: check what happened in a measurement cycle
 #        if self.isFinalCall(options) and not self.isFirstCall(options):
@@ -140,7 +151,11 @@ class Driver(LabberDriver):
 
     def update_zhinst_awg(self):
         json_path = self.getValue("SeqPy - Json Path")
-        if json_path:
+        current_hash = hash_file(json_path)
+        if current_hash != self.old_hash:
+            self.change_flag = True
+            self.old_hash = current_hash
+        if json_path and self.change_flag:
             # require for using trigger signal
             self.setValue("Marker Out - Signal 1", 4)
             self.update_sequence()
@@ -154,6 +169,7 @@ class Driver(LabberDriver):
                         config.retrieve("SAMPLING_FREQUENCY"),
                         int(self.getValue("SeqPy - Repetitions")),
                         path=os.path.expanduser("~"))
+                    self.change_flag = False
                     break
                 except Exception as e:
                     raise(e)  # TODO: investigate the random error

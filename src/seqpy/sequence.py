@@ -14,9 +14,6 @@ class Sequence(SweepableExpr):
         self._pulses = list()
         [self._pulses.append(list()) for i in range(n_channels)]
         self._trigger_pos = 0
-        self._period = 100e-6 * \
-            config.retrieve("SAMPLING_FREQUENCY")  # default
-        self._repetitions = 1e3  # default
         self.left = 0
         self.right = 0
         self._changed = False
@@ -117,8 +114,6 @@ class Sequence(SweepableExpr):
     def dump(self, file):
         dumped = dict()
         dumped["trigger pos"] = str(self._trigger_pos)
-        dumped["period"] = str(self._period)
-        dumped["repetitions"] = str(self._repetitions)
         for i, channel in enumerate(self._pulses):
             dumped[i] = dict()
             for j, (position, pulse, carrier) in enumerate(channel):
@@ -133,13 +128,10 @@ class Sequence(SweepableExpr):
         with open(file, "r") as f:
             sym_list = set()
             dumped = json.load(f)
-            n_channels = len(dumped) - 3
+            n_channels = len(dumped) - 1
             self.__init__(n_channels)
             self._trigger_pos = str2expr(dumped["trigger pos"])
-            self._period = str2expr(dumped["period"])
-            self._repetitions = str2expr(dumped["repetitions"])
-            sym_list |= collect_sym(
-                (dumped["trigger pos"], dumped["period"], dumped["repetitions"]))
+            sym_list |= collect_sym(dumped["trigger pos"])
             for i in range(n_channels):
                 for k, v in dumped[str(i)].items():
                     position = str2expr(v["position"])
