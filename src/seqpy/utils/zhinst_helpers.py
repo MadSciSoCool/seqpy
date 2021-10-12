@@ -153,8 +153,12 @@ def update_zhinst_awg(awg, sequence, period, repetitions, path=""):
         n_channels += 1
     # here change the awg grouping
     awg.awgs[0].stop()  # need to stop before change channel grouping
-    awg.system.awg.channelgrouping(
-        np.log2(n_channels - 1))  # 0->2*4, 1->4*2, 2->8*1
+    # check from toolkit or qcodes
+    if "qcodes" in str(type(awg)):
+        awg.system.awg.channelgrouping(
+            np.log2(n_channels - 1))  # 0->2*4, 1->4*2, 2->8*1
+    elif "toolkit" in str(type(awg)):
+        awg.nodetree.system.awg.channelgrouping(np.log2(n_channels - 1))
     # find common deadtime
     deadtimes = find_deadtime(waveforms + [sequence.marker_waveform()])
     # conjugate part

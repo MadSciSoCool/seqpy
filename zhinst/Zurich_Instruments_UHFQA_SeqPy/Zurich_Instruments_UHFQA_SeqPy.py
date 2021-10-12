@@ -3,6 +3,7 @@ import numpy as np
 from BaseDriver import LabberDriver, Error
 import zhinst.toolkit as tk
 import sys
+import os
 
 # change this value in case you are not using 'localhost'
 HOST = "localhost"
@@ -214,7 +215,8 @@ class Driver(LabberDriver):
                 old_samp_freq = config.retrieve("SAMPLING_FREQUENCY")
                 config.update("SAMPLING_FREQUENCY", 1.8e9)
                 try:
-                    update_zhinst_qa(self.controller, seq)
+                    update_zhinst_qa(self.controller, seq, path=os.path.expanduser("~"))
+                    break
                 except Exception as e:
                     raise(e)
                 finally:
