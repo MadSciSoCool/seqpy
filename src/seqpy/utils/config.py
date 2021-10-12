@@ -20,6 +20,7 @@ class Configuration:
             self.load_config()
         except (FileNotFoundError, AssertionError, JSONDecodeError):
             self.dump_config()
+        self._is_changed = True
 
     def load_config(self):
         if not os.path.exists(self._path):
@@ -42,6 +43,7 @@ class Configuration:
             self._validate(test_config)
             self._config = test_config
             self.dump_config()
+            self._is_changed = True
         except AssertionError:
             warnings.warn("The updated configuration is not valid!")
 
@@ -57,6 +59,17 @@ class Configuration:
         else:
             warnings.warn(
                 "Do not have access to the directory, configuration path has not been modified")
+    @property
+    def is_changed(self):
+        if self._is_changed:
+            self._is_changed = False
+            return True
+        else:
+            return False
+
+    @is_changed.setter
+    def set():
+        pass
 
     @staticmethod
     def _validate(config):

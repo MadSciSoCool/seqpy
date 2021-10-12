@@ -42,7 +42,7 @@ class Sequence(SweepableExpr):
         return len(self.waveforms()[0])
 
     def waveforms(self):
-        if self._changed:
+        if self._changed or config.is_changed:
             samp_freq = config.retrieve("SAMPLING_FREQUENCY")
             offset = 0 if config.retrieve(
                 "PHASE_ALIGNMENT") == "Zero" else self.trigger_pos  # in time

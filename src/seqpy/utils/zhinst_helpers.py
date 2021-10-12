@@ -51,7 +51,7 @@ class SeqcFile:
 
     def start_main_loop(self, iterations):
         if iterations < 0:
-            self._writeline(f"repeat(true){{")
+            self._writeline(f"while(true){{")
         else:
             self._writeline(f"repeat({int(iterations):d}){{")
         self._indentation = True

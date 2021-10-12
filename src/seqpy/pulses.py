@@ -78,8 +78,8 @@ class Pulse(SweepableExpr):
         new = copy.deepcopy(self)
         samp_freq = config.retrieve("SAMPLING_FREQUENCY")
         new._displacement += length
-        new._left += length*samp_freq
-        new._right += length*samp_freq
+        new._left += length
+        new._right += length
         return new
 
     def __add__(self, other):
@@ -145,12 +145,12 @@ class Pulse(SweepableExpr):
     @property
     def left(self):
         left_val = self.retrieve_value(self._left)
-        return left_val if np.isinf(left_val) else round(left_val)
+        return left_val if np.isinf(left_val) else round(left_val*config.retrieve("SAMPLING_FREQUENCY"))
 
     @property
     def right(self):
         right_val = self.retrieve_value(self._right)
-        return right_val if np.isinf(right_val) else round(right_val)
+        return right_val if np.isinf(right_val) else round(right_val*config.retrieve("SAMPLING_FREQUENCY"))+1
 
     @property
     def displacement(self):
@@ -246,9 +246,8 @@ class Gaussian(Pulse):
     def __init__(self, width: int, plateau: int = 0, cutoff: float = 5.) -> None:
         self.width = width
         self.plateau = plateau
-        left = (-plateau/2 - cutoff*width/2) * \
-            config.retrieve("SAMPLING_FREQUENCY")
-        right = -left + 1
+        left = -plateau/2 - cutoff*width/2
+        right = -left
         super().__init__(left, right)
 
     def _waveform(self, x):
@@ -262,8 +261,8 @@ class Gaussian(Pulse):
 class Drag(Pulse):
     def __init__(self, width: int, cutoff: float = 5.) -> None:
         self.width = width
-        left = -cutoff*width*config.retrieve("SAMPLING_FREQUENCY")/2
-        right = -left + 1
+        left = -cutoff*width/2
+        right = -left
         super().__init__(left, right)
 
     def _waveform(self, x):
@@ -277,8 +276,8 @@ class Drag(Pulse):
 class Rect(Pulse):
     def __init__(self, width: int) -> None:
         self.width = width
-        left = -width*config.retrieve("SAMPLING_FREQUENCY")/2
-        right = -left + 1
+        left = -width/2
+        right = -left
         super().__init__(left, right)
 
     def _waveform(self, x):
@@ -293,8 +292,8 @@ class Cosine(Pulse):
     def __init__(self, width: int, plateau: int = 0) -> None:
         self.width = width
         self.plateau = plateau
-        left = (-plateau / 2 - width)*config.retrieve("SAMPLING_FREQUENCY")
-        right = -left + 1
+        left = (-plateau / 2 - width)
+        right = -left
         self.is_atom = True
         super().__init__(left, right)
 
@@ -311,8 +310,8 @@ class Ramp(Pulse):
         self.width = width
         self.amplitude_start = amplitude_start
         self.amplitude_end = amplitude_end
-        left = -width*config.retrieve("SAMPLING_FREQUENCY") / 2
-        right = -left + 1
+        left = -width / 2
+        right = -left
         self.is_atom = True
         super().__init__(left, right)
 
