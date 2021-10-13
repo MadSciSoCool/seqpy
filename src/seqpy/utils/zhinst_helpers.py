@@ -141,8 +141,8 @@ class WaveformContainer:
         self.data = data
 
 
-def update_zhinst_awg(awg, sequence, period, repetitions, path=""):
-    waveforms = copy.deepcopy(sequence.waveforms())
+def update_zhinst_awg(awg, sequence, period, repetitions, path="", samp_freq=None):
+    waveforms = copy.deepcopy(sequence.waveforms(samp_freq=samp_freq))
     # pad one channel if odd
     n_channels = len(waveforms)
     if n_channels > 8:
@@ -201,9 +201,8 @@ def update_zhinst_awg(awg, sequence, period, repetitions, path=""):
         awg.awgs[i].upload_waveforms()
 
 
-def update_zhinst_qa(qa, sequence, path=""):
-    # remember to change the sampling rate before running this code
-    waveforms = copy.deepcopy(sequence.waveforms())
+def update_zhinst_qa(qa, sequence, path="", samp_freq=None):
+    waveforms = copy.deepcopy(sequence.waveforms(samp_freq=samp_freq))
     n_channels = len(waveforms)
     if n_channels > 2:
         raise(Exception(

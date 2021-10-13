@@ -77,10 +77,7 @@ class Driver(LabberDriver):
         if quant.name.endswith("Update AWG"):
             self.update_zhinst_awg()
 
-        if quant.name.endswith("Sample Clock"):
-            config.update("SAMPLING_FREQUENCY", value)
-
-        if quant.name.endswith("SeqPy"):
+        if quant.name.startswith("SeqPy"):
             self.change_flag = True
 
         # TODO: check what happened in a measurement cycle
@@ -110,7 +107,7 @@ class Driver(LabberDriver):
                 data = self.sequence.marker_waveform(delay=False)
             left = self.sequence.left
             right = self.sequence.right
-            freq = config.retrieve("SAMPLING_FREQUENCY")
+            freq = self.getValue("Device - Sample Clock")
             left = left / freq
             right = right / freq
             return quant.getTraceDict(data, x0=left, x1=right)
@@ -148,6 +145,7 @@ class Driver(LabberDriver):
                 value = self.getValue(f"SeqPy - Sweepable {i+1} Value")
                 if key is not "":
                     self.sequence.subs(key, value)
+            self.sequence.samp_freq = self.getValue("Device - Sample Clock")
 
     def update_zhinst_awg(self):
         json_path = self.getValue("SeqPy - Json Path")
@@ -160,15 +158,16 @@ class Driver(LabberDriver):
             self.setValue("Marker Out - Signal 1", 4)
             self.update_sequence()
             # to avoid some random error seen in the measurement
+            samp_freq = self.getValue("Device - Sample Clock")
             for i in range(15):
                 try:
                     update_zhinst_awg(
                         self.controller,
                         self.sequence,
-                        self.getValue("SeqPy - Period") *
-                        config.retrieve("SAMPLING_FREQUENCY"),
+                        self.getValue("SeqPy - Period") * samp_freq,
                         int(self.getValue("SeqPy - Repetitions")),
-                        path=os.path.expanduser("~"))
+                        path=os.path.expanduser("~"),
+                        samp_freq=samp_freq)
                     self.change_flag = False
                     break
                 except Exception as e:

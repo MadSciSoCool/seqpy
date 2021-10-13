@@ -18,6 +18,8 @@ class Sequence(SweepableExpr):
         self.right = 0
         self._changed = False
         self._waveforms = list()
+        self._samp_freq = None
+        self._cached_samp_freq = 0
         [self._waveforms.append(np.array([])) for i in range(n_channels)]
 
     def register(self, position, pulse, carrier=None, carrier_phases=(), carrier_frequencies=(), channel=None):
@@ -28,6 +30,10 @@ class Sequence(SweepableExpr):
                 c.append((position, pulse, carrier))
         else:
             self._pulses[channel].append((position, pulse, carrier))
+        self._changed = True
+
+    def subs(self, sym, value):
+        super().subs(sym, value)
         self._changed = True
 
     @property
@@ -41,9 +47,14 @@ class Sequence(SweepableExpr):
     def length(self):
         return len(self.waveforms()[0])
 
-    def waveforms(self):
-        if self._changed or config.is_changed:
-            samp_freq = config.retrieve("SAMPLING_FREQUENCY")
+    def waveforms(self, samp_freq=None):
+        if samp_freq:
+            self.samp_freq = samp_freq
+        freq_changed_flag = False
+        if self.samp_freq != self._cached_samp_freq:
+            freq_changed_flag = True
+            self._cached_samp_freq = self.samp_freq
+        if self._changed or config.is_changed or freq_changed_flag:
             offset = 0 if config.retrieve(
                 "PHASE_ALIGNMENT") == "Zero" else self.trigger_pos  # in time
             waveforms = list()
@@ -55,9 +66,10 @@ class Sequence(SweepableExpr):
                     shifted = pulse.shift(shifting_amount)  # in time
                     base += carrier * shifted
                 waveforms.append(base)
-            # update values of sweepables
-            for k, v in self._sweepable_mapping.items():
-                for wf in waveforms:
+            # update values of sweepables and sampling frequencies
+            for wf in waveforms:
+                wf.samp_freq = self.samp_freq
+                for k, v in self._sweepable_mapping.items():
                     wf.subs(k, v)
             # padding all channels to have the same length
             left = np.inf
@@ -69,8 +81,8 @@ class Sequence(SweepableExpr):
                     right = wf.right
             # the range should include trigger position
             delay_offset = config.retrieve(
-                "TRIGGER_DELAY")*samp_freq  # in samples
-            trig_pos = self.trigger_pos*samp_freq if config.retrieve(
+                "TRIGGER_DELAY")*self.samp_freq  # in samples
+            trig_pos = self.trigger_pos*self.samp_freq if config.retrieve(
                 "PHASE_ALIGNMENT") == "Zero" else 0  # in samples
             trig_left = trig_pos - delay_offset - 100  # in samples
             trig_right = trig_pos - delay_offset + 100  # in samples
@@ -80,8 +92,8 @@ class Sequence(SweepableExpr):
             right += (left - right) % 16
             wf_data = [wf._pad(wf.waveform, int(left), int(right))
                        for wf in waveforms]
-            self.right = right + offset*samp_freq  # in sample
-            self.left = left + offset*samp_freq  # in sample
+            self.right = right + offset * self.samp_freq  # in sample
+            self.left = left + offset * self.samp_freq  # in sample
             self._waveforms = [self._cap(wf) for wf in wf_data]
             self._changed = False
         return self._waveforms
@@ -95,8 +107,7 @@ class Sequence(SweepableExpr):
     def plot(self):
         fig, ax = plt.subplots()
         waveforms = self.waveforms()
-        x_axis = np.arange(self.left, self.right) / \
-            config.retrieve("SAMPLING_FREQUENCY")
+        x_axis = np.arange(self.left, self.right) / self.samp_freq
         for i in range(len(waveforms)):
             plt.plot(x_axis, waveforms[i], label=f"channel{i}")
         ax.plot(x_axis, self.marker_waveform(delay=False), label="marker")
@@ -104,11 +115,10 @@ class Sequence(SweepableExpr):
         return fig
 
     def marker_waveform(self, delay=True):
-        samp_freq = config.retrieve("SAMPLING_FREQUENCY")
         base = np.zeros(self.length())
         delay_offset = config.retrieve(
-            "TRIGGER_DELAY")*samp_freq if delay else 0  # in samples
-        base[int(self.trigger_pos*samp_freq - self.left-delay_offset):] = 1
+            "TRIGGER_DELAY")*self.samp_freq if delay else 0  # in samples
+        base[int(self.trigger_pos*self.samp_freq - self.left-delay_offset):] = 1
         return base
 
     def dump(self, file):
@@ -142,3 +152,11 @@ class Sequence(SweepableExpr):
                     sym_list |= syms
                     self.register(position, pulse, carrier, channel=i)
             return [Sweepable(sym) for sym in sym_list]
+
+    @property
+    def samp_freq(self):
+        return self._samp_freq if self._samp_freq else config.retrieve("SAMPLING_FREQUENCY")
+
+    @samp_freq.setter
+    def samp_freq(self, value):
+        self._samp_freq = value

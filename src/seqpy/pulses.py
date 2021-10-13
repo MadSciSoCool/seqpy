@@ -63,6 +63,7 @@ class Pulse(SweepableExpr):
         self.is_atom = True if type == "atom" else False
         self.type = type
         self.children = children
+        self._samp_freq = None
 
     # -------------- Handle arithmetic Operation --------------
 
@@ -76,7 +77,6 @@ class Pulse(SweepableExpr):
 
     def shift(self, length: int):
         new = copy.deepcopy(self)
-        samp_freq = config.retrieve("SAMPLING_FREQUENCY")
         new._displacement += length
         new._left += length
         new._right += length
@@ -120,17 +120,18 @@ class Pulse(SweepableExpr):
 
     @property
     def waveform(self):
-        samp_freq = config.retrieve("SAMPLING_FREQUENCY")
         if self.is_atom:
             if self.left > self.right:
                 return np.array([])
             x = np.arange(self.left, self.right) - \
-                self.displacement * samp_freq  # in sample
+                self.displacement * self.samp_freq  # in sample
             return self._waveform(x) * self.gain + self.offset
         else:
             # -------------- Tree traversing --------------
             child1, child2 = [c.shift(self.displacement)
                               for c in self.children]
+            for child in (child1, child2):
+                child.samp_freq = self.samp_freq
             wf1 = child1._pad(child1.waveform, self.left, self.right)
             wf2 = child2._pad(child2.waveform, self.left, self.right)
             if self.type == "add":
@@ -138,19 +139,23 @@ class Pulse(SweepableExpr):
             elif self.type == "mul":
                 return (wf1 * wf2) * self.gain + self.offset
 
-    @waveform.setter
-    def setter(self, val):
-        pass
-
     @property
     def left(self):
         left_val = self.retrieve_value(self._left)
-        return left_val if np.isinf(left_val) else round(left_val*config.retrieve("SAMPLING_FREQUENCY"))
+        return left_val if np.isinf(left_val) else round(left_val*self.samp_freq)
 
     @property
     def right(self):
         right_val = self.retrieve_value(self._right)
-        return right_val if np.isinf(right_val) else round(right_val*config.retrieve("SAMPLING_FREQUENCY"))+1
+        return right_val if np.isinf(right_val) else round(right_val*self.samp_freq)+1
+
+    @property
+    def samp_freq(self):
+        return self._samp_freq if self._samp_freq else config.retrieve("SAMPLING_FREQUENCY")
+
+    @samp_freq.setter
+    def samp_freq(self, value):
+        self._samp_freq = value
 
     @property
     def displacement(self):
@@ -212,7 +217,7 @@ class Carrier(Pulse):
         self.phases = phases
 
     def _waveform(self, x):
-        x = x / config.retrieve("SAMPLING_FREQUENCY")
+        x = x / self.samp_freq
         carrier = np.ones(len(x))
         frequencies, phases = self.extra_params
         for frequency, phase in zip(frequencies, phases):
@@ -251,7 +256,7 @@ class Gaussian(Pulse):
         super().__init__(left, right)
 
     def _waveform(self, x):
-        return gauss(x, *np.array(self.extra_params)*config.retrieve("SAMPLING_FREQUENCY"))
+        return gauss(x, *np.array(self.extra_params)*self.samp_freq)
 
     @property
     def _extra_params(self):
@@ -266,7 +271,7 @@ class Drag(Pulse):
         super().__init__(left, right)
 
     def _waveform(self, x):
-        return drag(x, *np.array(self.extra_params)*config.retrieve("SAMPLING_FREQUENCY"))
+        return drag(x, *np.array(self.extra_params)*self.samp_freq)
 
     @property
     def _extra_params(self):
@@ -281,7 +286,7 @@ class Rect(Pulse):
         super().__init__(left, right)
 
     def _waveform(self, x):
-        return rectangle(x, *np.array(self.extra_params)*config.retrieve("SAMPLING_FREQUENCY"))
+        return rectangle(x, *np.array(self.extra_params)*self.samp_freq)
 
     @property
     def _extra_params(self):
@@ -298,7 +303,7 @@ class Cosine(Pulse):
         super().__init__(left, right)
 
     def _waveform(self, x):
-        return cos(x, *np.array(self.extra_params)*config.retrieve("SAMPLING_FREQUENCY"))
+        return cos(x, *np.array(self.extra_params)*self.samp_freq)
 
     @property
     def _extra_params(self):
@@ -316,7 +321,7 @@ class Ramp(Pulse):
         super().__init__(left, right)
 
     def _waveform(self, x):
-        return ramp(x, *np.array(self.extra_params)*config.retrieve("SAMPLING_FREQUENCY"))
+        return ramp(x, *np.array(self.extra_params)*self.samp_freq)
 
     @property
     def _extra_params(self):

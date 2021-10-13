@@ -59,6 +59,7 @@ class Configuration:
         else:
             warnings.warn(
                 "Do not have access to the directory, configuration path has not been modified")
+
     @property
     def is_changed(self):
         if self._is_changed:
@@ -68,7 +69,7 @@ class Configuration:
             return False
 
     @is_changed.setter
-    def set():
+    def is_changed():
         pass
 
     @staticmethod

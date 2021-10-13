@@ -212,12 +212,9 @@ class Driver(LabberDriver):
             seq = Sequence()
             seq.load(json_path)
             for i in range(15):
-                old_samp_freq = config.retrieve("SAMPLING_FREQUENCY")
-                config.update("SAMPLING_FREQUENCY", 1.8e9)
                 try:
-                    update_zhinst_qa(self.controller, seq, path=os.path.expanduser("~"))
+                    update_zhinst_qa(
+                        self.controller, seq, path=os.path.expanduser("~"), samp_freq=1.8e9)
                     break
                 except Exception as e:
                     raise(e)
-                finally:
-                    config.update("SAMPLING_FREQUENCY", old_samp_freq)
