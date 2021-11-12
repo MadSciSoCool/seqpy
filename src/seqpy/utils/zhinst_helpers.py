@@ -111,7 +111,7 @@ def readout_seqc_generation(total_length, file_path):
 # cheat the awg module
 
 
-def find_deadtime(waveforms, threshold=5000):
+def find_deadtime(waveforms, threshold=150000):
     is_zero = np.all(np.array(waveforms) == 0, axis=0)
     deadtimes = list()
     current_length = 0
