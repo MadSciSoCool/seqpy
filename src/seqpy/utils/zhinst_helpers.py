@@ -1,5 +1,4 @@
 from os import path
-import seqpy
 import zhinst.utils as zu
 import numpy as np
 import copy
