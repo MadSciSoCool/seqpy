@@ -210,9 +210,9 @@ class Carrier(Pulse):
     def __init__(self, frequencies, phases) -> None:
         super().__init__(left=np.inf, right=-np.inf)
         if not hasattr(frequencies, '__iter__'):
-            frequencies = (frequencies, )
+            frequencies = [frequencies]
         if not hasattr(phases, '__iter__'):
-            phases = (phases, )
+            phases = [phases]
         self.frequencies = frequencies
         self.phases = phases
 
