@@ -4,6 +4,16 @@ from BaseDriver import LabberDriver, Error
 import zhinst.toolkit as tk
 import sys
 import os
+import hashlib
+
+
+def hash_file(filename, blocksize=65536):
+    with open(filename, "rb") as f:
+        file_hash = hashlib.blake2b()
+        for block in iter(lambda: f.read(blocksize), b""):
+            file_hash.update(block)
+    return file_hash.hexdigest()
+
 
 # change this value in case you are not using 'localhost'
 HOST = "localhost"
@@ -25,6 +35,8 @@ class Driver(LabberDriver):
         self.controller.setup()
         self.controller.connect_device()
         self.last_length = [0] * 2
+        self.change_flag = False
+        self.old_hash = ""
 
     def performClose(self, bError=False, options={}):
         """Perform the close instrument connection operation"""
@@ -76,6 +88,7 @@ class Driver(LabberDriver):
 
         # sequencer start / stop
         if quant.name.endswith("Run"):
+            self.update_zhinst_qa()
             value = self.awg_start_stop(quant, value)
 
         # all channel parameters
@@ -102,6 +115,10 @@ class Driver(LabberDriver):
         # compilation button
         if quant.name.endswith("Update AWG"):
             self.update_zhinst_qa()
+
+        if self.isFinalCall(options):
+            self.update_zhinst_awg()
+            self.awg_start_stop(quant, 1)
 
         # return the value that was set on the device ...
         return value
@@ -208,13 +225,18 @@ class Driver(LabberDriver):
 
     def update_zhinst_qa(self):
         json_path = self.getValue("SeqPy - Json Path")
-        if json_path:
+        current_hash = hash_file(json_path)
+        if current_hash != self.old_hash:
+            self.change_flag = True
+            self.old_hash = current_hash
+        if json_path and self.change_flag:
             seq = Sequence()
             seq.load(json_path)
             for i in range(15):
                 try:
                     update_zhinst_qa(
                         self.controller, seq, path=os.path.expanduser("~"), samp_freq=1.8e9)
+                    self.change_flag = False
                     break
                 except Exception as e:
                     raise(e)
