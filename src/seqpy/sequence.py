@@ -24,7 +24,7 @@ class Sequence(SweepableExpr):
 
     def register(self, position, pulse, carrier=None, carrier_phases=[], carrier_frequencies=[], channel=None):
         if not carrier:
-            carrier = Carrier(carrier_phases, carrier_frequencies)
+            carrier = Carrier(carrier_frequencies, carrier_phases)
         if not channel and not isinstance(channel, int):
             for c in self._pulses:
                 c.append((position, pulse, carrier))

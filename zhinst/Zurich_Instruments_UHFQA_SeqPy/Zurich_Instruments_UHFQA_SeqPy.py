@@ -35,7 +35,6 @@ class Driver(LabberDriver):
         self.controller.setup()
         self.controller.connect_device()
         self.last_length = [0] * 2
-        self.change_flag = False
         self.old_hash = ""
 
     def performClose(self, bError=False, options={}):
@@ -117,7 +116,7 @@ class Driver(LabberDriver):
             self.update_zhinst_qa()
 
         if self.isFinalCall(options):
-            self.update_zhinst_awg()
+            self.update_zhinst_qa()
             self.awg_start_stop(quant, 1)
 
         # return the value that was set on the device ...
@@ -226,10 +225,7 @@ class Driver(LabberDriver):
     def update_zhinst_qa(self):
         json_path = self.getValue("SeqPy - Json Path")
         current_hash = hash_file(json_path)
-        if current_hash != self.old_hash:
-            self.change_flag = True
-            self.old_hash = current_hash
-        if json_path and self.change_flag:
+        if json_path and (current_hash != self.old_hash):
             seq = Sequence()
             seq.load(json_path)
             for i in range(15):
