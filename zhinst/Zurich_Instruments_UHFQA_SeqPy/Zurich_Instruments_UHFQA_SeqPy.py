@@ -224,15 +224,16 @@ class Driver(LabberDriver):
 
     def update_zhinst_qa(self):
         json_path = self.getValue("SeqPy - Json Path")
-        current_hash = hash_file(json_path)
-        if json_path and (current_hash != self.old_hash):
-            seq = Sequence()
-            seq.load(json_path)
-            for i in range(15):
-                try:
-                    update_zhinst_qa(
-                        self.controller, seq, path=os.path.expanduser("~"), samp_freq=1.8e9)
-                    self.change_flag = False
-                    break
-                except Exception as e:
-                    raise(e)
+        if json_path:
+            current_hash = hash_file(json_path)
+            if current_hash != self.old_hash:
+                self.old_hash = current_hash
+                seq = Sequence()
+                seq.load(json_path)
+                for i in range(15):
+                    try:
+                        update_zhinst_qa(
+                            self.controller, seq, path=os.path.expanduser("~"), samp_freq=1.8e9)
+                        break
+                    except Exception as e:
+                        raise(e)
