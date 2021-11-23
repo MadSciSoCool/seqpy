@@ -5,6 +5,7 @@ import numpy as np
 import os
 import sys
 import hashlib
+import re
 
 
 def hash_file(filename, blocksize=65536):
@@ -80,11 +81,8 @@ class Driver(LabberDriver):
         if quant.name.startswith("SeqPy"):
             self.change_flag = True
 
-        # TODO: check what happened in a measurement cycle
-#        if self.isFinalCall(options) and not self.isFirstCall(options):
         if self.isFinalCall(options):
             self.update_zhinst_awg()
-            # if any of AWGs is in the 'Send Trigger' mode, start this AWG and wait until it stops
             self.awg_start_stop(quant, 1)
 
         return value
@@ -148,7 +146,7 @@ class Driver(LabberDriver):
             self.sequence.samp_freq = self.getValue("Device - Sample Clock")
 
     def update_zhinst_awg(self):
-        json_path = self.getValue("SeqPy - Json Path")
+        json_path = self.get_json_path()
         current_hash = hash_file(json_path)
         if current_hash != self.old_hash:
             self.change_flag = True
@@ -172,3 +170,10 @@ class Driver(LabberDriver):
                     break
                 except Exception as e:
                     raise(e)  # TODO: investigate the random error
+
+    def get_json_path(self):
+        index = str(int(self.getValue("SeqPy - File Index")))
+        json_path = self.getValue("SeqPy - Json Path")
+        if self.getValue("SeqPy - Replace Index"):
+            json_path = re.sub(r'\d+', index, json_path)
+        return json_path
