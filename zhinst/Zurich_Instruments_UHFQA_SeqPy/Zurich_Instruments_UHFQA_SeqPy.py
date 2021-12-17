@@ -236,4 +236,4 @@ class Driver(LabberDriver):
                             self.controller, seq, path=os.path.expanduser("~"), samp_freq=1.8e9)
                         break
                     except Exception as e:
-                        raise(e)
+                        pass

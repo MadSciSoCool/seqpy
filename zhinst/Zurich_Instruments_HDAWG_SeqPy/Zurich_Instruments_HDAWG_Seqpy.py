@@ -152,25 +152,25 @@ class Driver(LabberDriver):
             if current_hash != self.old_hash:
                 self.change_flag = True
                 self.old_hash = current_hash
-                if self.change_flag:
-                    # require for using trigger signal
-                    self.setValue("Marker Out - Signal 1", 4)
-                    self.update_sequence()
-                    # to avoid some random error seen in the measurement
-                    samp_freq = self.getValue("Device - Sample Clock")
-                    for i in range(15):
-                        try:
-                            update_zhinst_awg(
-                                self.controller,
-                                self.sequence,
-                                self.getValue("SeqPy - Period") * samp_freq,
-                                int(self.getValue("SeqPy - Repetitions")),
-                                path=os.path.expanduser("~"),
-                                samp_freq=samp_freq)
-                            self.change_flag = False
-                            break
-                        except Exception as e:
-                            raise(e)  # TODO: investigate the random error
+            if self.change_flag:
+                # require for using trigger signal
+                self.setValue("Marker Out - Signal 1", 4)
+                self.update_sequence()
+                # to avoid some random error seen in the measurement
+                samp_freq = self.getValue("Device - Sample Clock")
+                for i in range(15):
+                    try:
+                        update_zhinst_awg(
+                            self.controller,
+                            self.sequence,
+                            self.getValue("SeqPy - Period") * samp_freq,
+                            int(self.getValue("SeqPy - Repetitions")),
+                            path=os.path.expanduser("~"),
+                            samp_freq=samp_freq)
+                        self.change_flag = False
+                        break
+                    except Exception as e:
+                        pass # TODO: investigate the random error
 
     def get_json_path(self):
         index = str(int(self.getValue("SeqPy - File Index")))
