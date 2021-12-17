@@ -170,11 +170,11 @@ class Driver(LabberDriver):
                         self.change_flag = False
                         break
                     except Exception as e:
-                        pass # TODO: investigate the random error
+                        pass  # TODO: investigate the random error
 
     def get_json_path(self):
         index = str(int(self.getValue("SeqPy - File Index")))
-        json_path = self.getValue("SeqPy - Json Path")
+        path, file = os.path.split(self.getValue("SeqPy - Json Path"))
         if self.getValue("SeqPy - Replace Index"):
-            json_path = re.sub(r'\d+', index, json_path)
-        return json_path
+            file = re.sub(r'\d+', index, file)
+        return os.path.join(path, file)
