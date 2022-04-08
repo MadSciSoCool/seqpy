@@ -69,7 +69,7 @@ class SeqcFile:
             self.file_string += f"{str}\n"
 
 
-def seqc_generation(alivetimes, deadtimes, n_channels, total_length, repetitions, period, file_path=""):
+def seqc_generation(alivetimes, n_channels, total_length, repetitions, period, file_path=""):
     # write the .seqC file
     n_waveforms = len(alivetimes)
     seqc_file = SeqcFile(n_channels, file_path)
@@ -83,7 +83,7 @@ def seqc_generation(alivetimes, deadtimes, n_channels, total_length, repetitions
         args = [(j, j, i) for j in range(n_channels)]
         seqc_file.play_wave(*args)
         if i < n_waveforms - 1:
-            seqc_file.wait(deadtimes[i][1] - deadtimes[i][0])
+            seqc_file.wait(alivetimes[i+1][0] - alivetimes[i][1])
     # offset to be confirmed
     seqc_file.wait(max(period - total_length, 1))
     seqc_file.end_main_loop()
@@ -106,8 +106,6 @@ def readout_seqc_generation(total_length, file_path):
 #    zhinst wrapper
 #
 # ----------------------------------------------------------
-
-# cheat the awg module
 
 
 def find_deadtime(waveforms, threshold=150000):
@@ -134,6 +132,8 @@ def find_deadtime(waveforms, threshold=150000):
             else:
                 pass
     return deadtimes
+
+# cheat the awg module
 
 
 class WaveformContainer:
@@ -184,7 +184,6 @@ def update_zhinst_awg(awg, sequence, period, repetitions, path="", samp_freq=Non
     waveforms = np.hstack((waveforms, np.zeros(n_channels, tail_padding)))
     # upload the .seqc file
     seqc = seqc_generation(alivetimes=alivetimes,
-                           deadtimes=deadtimes,
                            n_channels=n_channels,
                            total_length=sequence.length(),
                            repetitions=repetitions,
