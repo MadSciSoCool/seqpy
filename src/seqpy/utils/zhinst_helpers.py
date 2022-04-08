@@ -163,10 +163,11 @@ def update_zhinst_awg(awg, sequence, period, repetitions, path="", samp_freq=Non
     # find common deadtime
     deadtimes = find_deadtime(waveforms + [sequence.marker_waveform()])
     # remove the tailing zero if there's any
-    if deadtimes[-1][1] == length:
-        waveforms = np.array(waveforms)[:, :deadtimes[-1][0]]
-        length = length - deadtimes[-1][1] + deadtimes[-1][0]
-        deadtimes = deadtimes[:-1]
+    if len(deadtimes) > 0:
+        if deadtimes[-1][1] == length:
+            waveforms = np.array(waveforms)[:, :deadtimes[-1][0]]
+            length = length - deadtimes[-1][1] + deadtimes[-1][0]
+            deadtimes = deadtimes[:-1]
     # conjugate part
     alivetimes = list()
     # the conjugate part for deadtimes
@@ -181,7 +182,7 @@ def update_zhinst_awg(awg, sequence, period, repetitions, path="", samp_freq=Non
     # pad the last piece of waveform to
     tail_padding = (start - end) % 16
     alivetimes.append((start, end + tail_padding))
-    waveforms = np.hstack((waveforms, np.zeros(n_channels, tail_padding)))
+    waveforms = np.hstack((waveforms, np.zeros((n_channels, tail_padding))))
     # upload the .seqc file
     seqc = seqc_generation(alivetimes=alivetimes,
                            n_channels=n_channels,
