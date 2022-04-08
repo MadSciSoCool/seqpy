@@ -36,7 +36,7 @@ class SeqcFile:
     def wait(self, samples):
         self._writeline(f"playZero({int(samples):d});")
         # PlayZero should be better for shorter wait time, otherwise use wait, while wait(1) is actually 3 clock cycles
-        # self._writeline(f"wait({int(samples):d});")
+        # self._writeline(f"wait({int(samples/8):d});")
 
     def awg_monitor_trig(self):
         self._writeline("waitDigTrigger(1, 1);")
@@ -128,6 +128,7 @@ def find_deadtime(waveforms, threshold=150000):
                 zero_flag = False  # if previously a zero period, now exiting
                 if current_length > threshold:
                     # add this period if its length beyond the threshold
+                    # truncate the
                     deadtimes.append((current_start, i))
                 current_length = 0
             else:
@@ -142,6 +143,7 @@ class WaveformContainer:
 
 def update_zhinst_awg(awg, sequence, period, repetitions, path="", samp_freq=None):
     waveforms = copy.deepcopy(sequence.waveforms(samp_freq=samp_freq))
+    length = sequence.length()
     # pad one channel if odd
     n_channels = len(waveforms)
     if n_channels > 8:
@@ -160,15 +162,26 @@ def update_zhinst_awg(awg, sequence, period, repetitions, path="", samp_freq=Non
         awg.nodetree.system.awg.channelgrouping(np.log2(n_channels - 1))
     # find common deadtime
     deadtimes = find_deadtime(waveforms + [sequence.marker_waveform()])
+    # remove the tailing zero if there's any
+    if deadtimes[-1][1] == length:
+        waveforms = np.array(waveforms)[:, :deadtimes[-1][0]]
+        length = length - deadtimes[-1][1] + deadtimes[-1][0]
+        deadtimes = deadtimes[:-1]
     # conjugate part
     alivetimes = list()
     # the conjugate part for deadtimes
     start = 0
     end = sequence.length()
     for s, e in deadtimes:
-        alivetimes.append((start, s + (start - s) % 16))
-        start = e
-    alivetimes.append((start + (end - start) % 16, end))
+        # new s regarding to the multiple of 16 requirements
+        s_new = s + (start - s) % 16
+        alivetimes.append((start, s_new))
+        # new e regarding to the multiple of 16 requirements
+        start = e - (e - s_new) % 16
+    # pad the last piece of waveform to
+    tail_padding = (start - end) % 16
+    alivetimes.append((start, end + tail_padding))
+    waveforms = np.hstack((waveforms, np.zeros(n_channels, tail_padding)))
     # upload the .seqc file
     seqc = seqc_generation(alivetimes=alivetimes,
                            deadtimes=deadtimes,
