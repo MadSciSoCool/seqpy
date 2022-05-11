@@ -69,21 +69,20 @@ class SeqcFile:
             self.file_string += f"{str}\n"
 
 
-def seqc_generation(alivetimes, n_channels, total_length, repetitions, period, file_path=""):
+def seqc_generation(active_times, n_channels, total_length, repetitions, period, file_path=""):
     # write the .seqC file
-    n_waveforms = len(alivetimes)
+    n_waveforms = len(active_times)
     seqc_file = SeqcFile(n_channels, file_path)
-
     # define all placeholders
     for i in range(n_channels):
-        for j, (start, end) in enumerate(alivetimes):
+        for j, (start, end) in enumerate(active_times):
             seqc_file.define_placeholder(end-start, i, j)
     seqc_file.start_main_loop(repetitions)
-    for i in range(len(alivetimes)):
+    for i in range(len(active_times)):
         args = [(j, j, i) for j in range(n_channels)]
         seqc_file.play_wave(*args)
         if i < n_waveforms - 1:
-            seqc_file.wait(alivetimes[i+1][0] - alivetimes[i][1])
+            seqc_file.wait(active_times[i+1][0] - active_times[i][1])
     # offset to be confirmed
     seqc_file.wait(max(period - total_length, 1))
     seqc_file.end_main_loop()
@@ -106,32 +105,34 @@ def readout_seqc_generation(total_length, file_path):
 #    zhinst wrapper
 #
 # ----------------------------------------------------------
-
-
-def find_deadtime(waveforms, threshold=150000):
-    is_zero = np.all(np.array(waveforms) == 0, axis=0)
-    deadtimes = list()
-    current_length = 0
-    current_start = 0
-    zero_flag = False
-    for i in range(len(is_zero)):
-        if is_zero[i]:
-            if not zero_flag:
-                zero_flag = True  # if previously not a zero period, now entering one
-                current_start = i  # register the starting point
-            else:
-                current_length += 1  # if already in zero period, add length by one
-        else:
-            if zero_flag:
-                zero_flag = False  # if previously a zero period, now exiting
-                if current_length > threshold:
+def find_active_time(waveforms, threshold=150000):
+    # find the period where at least one channel is not zero
+    nonzero = np.any(np.array(waveforms), axis=0)
+    nonzero_16 = np.any(nonzero.reshape(-1, 16))
+    length_16 = len(nonzero_16)
+    active_times = list()
+    active_flag = False
+    p = 0  # current pointer position
+    ps = 0  # starting position of this active period
+    dead_l = 0  # length of the
+    while p < length_16:
+        if nonzero_16[p]:  # if current pointer is not zero
+            if not active_flag:
+                active_flag = True  # if previously not a zero period, now entering one
+                ps = p  # register the starting point
+        else:  # if current pointer is zero
+            if active_flag:
+                dead_l = dead_l + 1
+                if dead_l * 16 > threshold:
+                    active_flag = False  # if previously a zero period, now exiting
                     # add this period if its length beyond the threshold
-                    # truncate the
-                    deadtimes.append((current_start, i))
-                current_length = 0
-            else:
-                pass
-    return deadtimes
+                    active_times.append((ps*16, (p-dead_l)*16))
+                    dead_l = 0
+        p = p + 1
+    # handle last active period
+    if active_flag:
+        active_times.append((ps*16, (p-dead_l)*16))
+    return active_times
 
 # cheat the awg module
 
@@ -160,31 +161,12 @@ def update_zhinst_awg(awg, sequence, period, repetitions, path="", samp_freq=Non
             np.log2(n_channels - 1))  # 0->2*4, 1->4*2, 2->8*1
     elif "toolkit" in str(type(awg)):
         awg.nodetree.system.awg.channelgrouping(np.log2(n_channels - 1))
-    # find common deadtime
-    deadtimes = find_deadtime(waveforms + [sequence.marker_waveform()])
-    # remove the tailing zero if there's any
-    if len(deadtimes) > 0:
-        if deadtimes[-1][1] == length:
-            waveforms = np.array(waveforms)[:, :deadtimes[-1][0]]
-            length = length - deadtimes[-1][1] + deadtimes[-1][0]
-            deadtimes = deadtimes[:-1]
-    # conjugate part
-    alivetimes = list()
-    # the conjugate part for deadtimes
-    start = 0
-    end = sequence.length()
-    for s, e in deadtimes:
-        # new s regarding to the multiple of 16 requirements
-        s_new = s + (start - s) % 16
-        alivetimes.append((start, s_new))
-        # new e regarding to the multiple of 16 requirements
-        start = e - (e - s_new) % 16
-    # pad the last piece of waveform to
-    tail_padding = (start - end) % 16
-    alivetimes.append((start, end + tail_padding))
-    waveforms = np.hstack((waveforms, np.zeros((n_channels, tail_padding))))
+    # pad waveform to multiple of 16 samples
+    waveforms = np.hstack((waveforms, np.zeros((n_channels, -length % 16))))
+    # find active time
+    active_times = find_active_time(waveforms + [sequence.marker_waveform()])
     # upload the .seqc file
-    seqc = seqc_generation(alivetimes=alivetimes,
+    seqc = seqc_generation(active_times=active_times,
                            n_channels=n_channels,
                            total_length=sequence.length(),
                            repetitions=repetitions,
@@ -197,7 +179,7 @@ def update_zhinst_awg(awg, sequence, period, repetitions, path="", samp_freq=Non
     for i in range(n_channels//2):
         awg.awgs[i].reset_queue()
     for i in range(n_channels//2):
-        for start, end in alivetimes:
+        for start, end in active_times:
             waveform = zu.convert_awg_waveform(
                 waveforms[2 * i][start:end],
                 waveforms[2 * i + 1][start:end],

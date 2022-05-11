@@ -173,6 +173,7 @@ class Driver(LabberDriver):
                         pass  # TODO: investigate the random error
 
     def get_json_path(self):
+        # for sweeeping json file name
         index = str(int(self.getValue("SeqPy - File Index")))
         path, file = os.path.split(self.getValue("SeqPy - Json Path"))
         if self.getValue("SeqPy - Replace Index"):

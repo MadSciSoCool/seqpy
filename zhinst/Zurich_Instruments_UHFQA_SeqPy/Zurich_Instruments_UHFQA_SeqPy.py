@@ -35,7 +35,9 @@ class Driver(LabberDriver):
         self.controller.setup()
         self.controller.connect_device()
         self.last_length = [0] * 2
+        self.change_flag = False
         self.old_hash = ""
+        self.sequence = Sequence()
 
     def performClose(self, bError=False, options={}):
         """Perform the close instrument connection operation"""
@@ -112,6 +114,9 @@ class Driver(LabberDriver):
                 channel.enable() if value else channel.disable()
 
         # compilation button
+        if quant.name.startswith("SeqPy"):
+            self.change_flag = True
+
         if quant.name.endswith("Update AWG"):
             self.update_zhinst_qa()
 
@@ -222,18 +227,33 @@ class Driver(LabberDriver):
         imag = np.mean(np.real(data2))
         return real + 1j * imag
 
+    def update_sequence(self):
+        json_path = self.getValue("SeqPy - Json Path")
+        if json_path:
+            self.sequence.load(json_path)
+            for i in range(3):
+                key = self.getValue(f"SeqPy - Sweepable {i+1} Name")
+                value = self.getValue(f"SeqPy - Sweepable {i+1} Value")
+                if key is not "":
+                    self.sequence.subs(key, value)
+
     def update_zhinst_qa(self):
         json_path = self.getValue("SeqPy - Json Path")
         if json_path:
             current_hash = hash_file(json_path)
             if current_hash != self.old_hash:
+                self.change_flag = True
                 self.old_hash = current_hash
-                seq = Sequence()
-                seq.load(json_path)
+            if self.change_flag:
+                self.update_sequence()
                 for i in range(15):
                     try:
                         update_zhinst_qa(
-                            self.controller, seq, path=os.path.expanduser("~"), samp_freq=1.8e9)
+                            self.controller,
+                            self.sequence,
+                            path=os.path.expanduser("~"),
+                            samp_freq=1.8e9)
+                        self.change_flag = False
                         break
                     except Exception as e:
                         pass
