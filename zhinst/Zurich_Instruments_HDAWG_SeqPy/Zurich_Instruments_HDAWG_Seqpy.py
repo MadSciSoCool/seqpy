@@ -147,7 +147,7 @@ class Driver(LabberDriver):
 
     def update_zhinst_awg(self):
         json_path = self.get_json_path()
-        if json_path:
+        if os.path.exists(json_path):
             current_hash = hash_file(json_path)
             if current_hash != self.old_hash:
                 self.change_flag = True
@@ -170,7 +170,7 @@ class Driver(LabberDriver):
                         self.change_flag = False
                         break
                     except Exception as e:
-                        pass  # TODO: investigate the random error
+                        raise(e)  # TODO: investigate the random error
 
     def get_json_path(self):
         # for sweeeping json file name

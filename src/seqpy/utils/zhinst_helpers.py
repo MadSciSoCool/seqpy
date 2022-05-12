@@ -108,7 +108,9 @@ def readout_seqc_generation(total_length, file_path):
 def find_active_time(waveforms, threshold=150000):
     # find the period where at least one channel is not zero
     nonzero = np.any(np.array(waveforms), axis=0)
-    nonzero_16 = np.any(nonzero.reshape(-1, 16))
+    nonzero_16 = np.any(nonzero.reshape(16, -1), axis=0)
+    print(nonzero_16.shape)
+    print(nonzero_16)
     length_16 = len(nonzero_16)
     active_times = list()
     active_flag = False
@@ -117,6 +119,7 @@ def find_active_time(waveforms, threshold=150000):
     dead_l = 0  # length of the
     while p < length_16:
         if nonzero_16[p]:  # if current pointer is not zero
+            dead_l = 0
             if not active_flag:
                 active_flag = True  # if previously not a zero period, now entering one
                 ps = p  # register the starting point
@@ -126,12 +129,12 @@ def find_active_time(waveforms, threshold=150000):
                 if dead_l * 16 > threshold:
                     active_flag = False  # if previously a zero period, now exiting
                     # add this period if its length beyond the threshold
-                    active_times.append((ps*16, (p-dead_l)*16))
+                    active_times.append((ps*16, (p+1-dead_l)*16))
                     dead_l = 0
         p = p + 1
     # handle last active period
     if active_flag:
-        active_times.append((ps*16, (p-dead_l)*16))
+        active_times.append((ps*16, p*16))
     return active_times
 
 # cheat the awg module
