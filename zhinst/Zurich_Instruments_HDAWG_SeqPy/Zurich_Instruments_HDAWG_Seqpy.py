@@ -1,8 +1,9 @@
-from BaseDriver import LabberDriver
+from BaseDriver import LabberDriver, Error
 import zhinst.toolkit as tk
 from seqpy import *
 import numpy as np
 import os
+import sys
 import hashlib
 import re
 
@@ -73,17 +74,17 @@ class Driver(LabberDriver):
             self.update_zhinst_awg()
             value = self.awg_start_stop(quant, value)
 
-        if quant.name.endswith("Update AWG"):
-            self.update_zhinst_awg()
-
         if quant.name.startswith("SeqPy"):
             self.change_flag = True
+
+        # compilation button
+        if quant.name.endswith("Update AWG"):
+            self.update_zhinst_awg()
 
         if self.isFinalCall(options):
             self.update_zhinst_awg()
             self.awg_start_stop(quant, 1)
 
-        # return the value that was set on the device ...
         return value
 
     def performGetValue(self, quant, options={}):

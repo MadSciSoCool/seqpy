@@ -211,7 +211,8 @@ def update_zhinst_qa(qa, sequence, path="", samp_freq=None):
     elif n_channels == 1:
         # padded to 2 channels
         waveforms.append(np.zeros(sequence.length()))
-    digitization_start = int(16 * (sequence.trigger_pos - sequence.left) // 16)
+    waveforms = np.array(waveforms)
+    digitization_start = int(16 * ((sequence.trigger_pos*samp_freq - sequence.left) // 16))
     seqc = readout_seqc_generation(total_length=sequence.length(),
                                    file_path=path,
                                    digitization_start=digitization_start)
@@ -220,6 +221,6 @@ def update_zhinst_qa(qa, sequence, path="", samp_freq=None):
     qa.awg.set_sequence_params(sequence_type="Custom", path=seqc._filepath)
     # upload the waveforms
     qa.awg.reset_queue()
-    qa.awg.queue_waveform(*waveforms[:][:digitization_start])
-    qa.awg.queue_waveform(*waveforms[:][digitization_start:])
+    qa.awg.queue_waveform(*waveforms[:,:digitization_start])
+    qa.awg.queue_waveform(*waveforms[:,digitization_start:])
     qa.awg.compile_and_upload_waveforms()
