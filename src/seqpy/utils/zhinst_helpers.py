@@ -38,8 +38,10 @@ class SeqcFile:
         # PlayZero should be better for shorter wait time, otherwise use wait, while wait(1) is actually 3 clock cycles
         # self._writeline(f"wait({int(samples/8):d});")
 
-    def awg_monitor_trig(self):
+    def wait_trigger(self):
         self._writeline("waitDigTrigger(1, 1);")
+
+    def start_digitization(self):
         self._writeline("setTrigger(AWG_MONITOR_TRIGGER);")
         self._writeline("setTrigger(0);")
 
@@ -89,13 +91,17 @@ def seqc_generation(active_times, n_channels, total_length, repetitions, period,
     return seqc_file
 
 
-def readout_seqc_generation(total_length, file_path):
+def readout_seqc_generation(total_length, file_path, digitization_start):
     seqc_file = SeqcFile(2, file_path)
     for i in range(2):
-        seqc_file.define_placeholder(total_length, i, 0, marker=False)
+        seqc_file.define_placeholder(digitization_start, i, 0, marker=False)
+        seqc_file.define_placeholder(
+            total_length-digitization_start, i, 1, marker=False)
     seqc_file.start_main_loop(-1)
-    seqc_file.awg_monitor_trig()
+    seqc_file.wait_trigger()
     seqc_file.play_wave((0, 0, 0), (1, 1, 0))
+    seqc_file.start_digitization()
+    seqc_file.play_wave((0, 0, 1), (1, 1, 1))
     seqc_file.end_main_loop()
     return seqc_file
 
@@ -164,8 +170,6 @@ def update_zhinst_awg(awg, sequence, period, repetitions, path="", samp_freq=Non
             np.log2(n_channels - 1))  # 0->2*4, 1->4*2, 2->8*1
     elif "toolkit" in str(type(awg)):
         awg.nodetree.system.awg.channelgrouping(np.log2(n_channels - 1))
-    # pad waveform to multiple of 16 samples
-    waveforms = np.hstack((waveforms, np.zeros((n_channels, -length % 16))))
     # find active time
     active_times = find_active_time(waveforms + [sequence.marker_waveform()])
     # upload the .seqc file
@@ -207,12 +211,15 @@ def update_zhinst_qa(qa, sequence, path="", samp_freq=None):
     elif n_channels == 1:
         # padded to 2 channels
         waveforms.append(np.zeros(sequence.length()))
-    seqc = readout_seqc_generation(
-        total_length=sequence.length(), file_path=path)
+    digitization_start = int(16 * (sequence.trigger_pos - sequence.left) // 16)
+    seqc = readout_seqc_generation(total_length=sequence.length(),
+                                   file_path=path,
+                                   digitization_start=digitization_start)
     seqc.make_file()
     # compile the nominal awg
     qa.awg.set_sequence_params(sequence_type="Custom", path=seqc._filepath)
     # upload the waveforms
     qa.awg.reset_queue()
-    qa.awg.queue_waveform(*waveforms)
+    qa.awg.queue_waveform(*waveforms[:][:digitization_start])
+    qa.awg.queue_waveform(*waveforms[:][digitization_start:])
     qa.awg.compile_and_upload_waveforms()

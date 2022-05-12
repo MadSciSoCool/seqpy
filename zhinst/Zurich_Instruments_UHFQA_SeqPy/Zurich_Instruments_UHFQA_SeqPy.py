@@ -1,8 +1,7 @@
 from seqpy import *
 import numpy as np
-from BaseDriver import LabberDriver, Error
+from BaseDriver import LabberDriver
 import zhinst.toolkit as tk
-import sys
 import os
 import hashlib
 
@@ -113,12 +112,11 @@ class Driver(LabberDriver):
             if name[3] == "Enable":
                 channel.enable() if value else channel.disable()
 
-        # compilation button
-        if quant.name.startswith("SeqPy"):
-            self.change_flag = True
-
         if quant.name.endswith("Update AWG"):
             self.update_zhinst_qa()
+
+        if quant.name.startswith("SeqPy"):
+            self.change_flag = True
 
         if self.isFinalCall(options):
             self.update_zhinst_qa()
@@ -127,7 +125,7 @@ class Driver(LabberDriver):
         # return the value that was set on the device ...
         return value
 
-    def performGetValue(self, quant, options={}):
+    def performGetValue(self, quant, optio ns={}):
         """Perform the Get Value instrument operation"""
         if quant.get_cmd:
             # if a 'get_cmd' is defined, use it to return the node value
