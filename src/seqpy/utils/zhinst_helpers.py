@@ -41,7 +41,9 @@ class SeqcFile:
     def wait_trigger(self):
         self._writeline("waitDigTrigger(1, 1);")
 
-    def start_digitization(self):
+    def start_digitization(self, wait=0):
+        if wait > 0:
+            self._writeline(f"wait({int(wait/8):d});")
         self._writeline("setTrigger(AWG_MONITOR_TRIGGER);")
         self._writeline("setTrigger(0);")
 
@@ -94,14 +96,11 @@ def seqc_generation(active_times, n_channels, total_length, repetitions, period,
 def readout_seqc_generation(total_length, file_path, digitization_start):
     seqc_file = SeqcFile(2, file_path)
     for i in range(2):
-        seqc_file.define_placeholder(digitization_start, i, 0, marker=False)
-        seqc_file.define_placeholder(
-            total_length-digitization_start, i, 1, marker=False)
+        seqc_file.define_placeholder(total_length, i, 0, marker=False)
     seqc_file.start_main_loop(-1)
     seqc_file.wait_trigger()
     seqc_file.play_wave((0, 0, 0), (1, 1, 0))
-    seqc_file.start_digitization()
-    seqc_file.play_wave((0, 0, 1), (1, 1, 1))
+    seqc_file.start_digitization(wait=digitization_start)
     seqc_file.end_main_loop()
     return seqc_file
 
@@ -212,7 +211,7 @@ def update_zhinst_qa(qa, sequence, path="", samp_freq=None):
         # padded to 2 channels
         waveforms.append(np.zeros(sequence.length()))
     waveforms = np.array(waveforms)
-    digitization_start = int(16 * ((sequence.trigger_pos*samp_freq - sequence.left) // 16))
+    digitization_start = sequence.trigger_pos*samp_freq - sequence.left
     seqc = readout_seqc_generation(total_length=sequence.length(),
                                    file_path=path,
                                    digitization_start=digitization_start)
@@ -221,6 +220,5 @@ def update_zhinst_qa(qa, sequence, path="", samp_freq=None):
     qa.awg.set_sequence_params(sequence_type="Custom", path=seqc._filepath)
     # upload the waveforms
     qa.awg.reset_queue()
-    qa.awg.queue_waveform(*waveforms[:,:digitization_start])
-    qa.awg.queue_waveform(*waveforms[:,digitization_start:])
+    qa.awg.queue_waveform(*waveforms)
     qa.awg.compile_and_upload_waveforms()
