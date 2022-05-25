@@ -170,7 +170,7 @@ class Driver(LabberDriver):
                         self.change_flag = False
                         break
                     except Exception as e:
-                        raise(e)  # TODO: investigate the random error
+                        pass  # TODO: investigate the random error
 
     def get_json_path(self):
         # for sweeeping json file name

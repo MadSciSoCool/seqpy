@@ -113,9 +113,7 @@ def readout_seqc_generation(total_length, file_path, digitization_start):
 def find_active_time(waveforms, threshold=150000):
     # find the period where at least one channel is not zero
     nonzero = np.any(np.array(waveforms), axis=0)
-    nonzero_16 = np.any(nonzero.reshape(16, -1), axis=0)
-    print(nonzero_16.shape)
-    print(nonzero_16)
+    nonzero_16 = np.any(nonzero.reshape(-1, 16), axis=1)
     length_16 = len(nonzero_16)
     active_times = list()
     active_flag = False
@@ -126,7 +124,7 @@ def find_active_time(waveforms, threshold=150000):
         if nonzero_16[p]:  # if current pointer is not zero
             dead_l = 0
             if not active_flag:
-                active_flag = True  # if previously not a zero period, now entering one
+                active_flag = True  # if previously not a active period, now entering one
                 ps = p  # register the starting point
         else:  # if current pointer is zero
             if active_flag:
