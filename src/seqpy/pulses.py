@@ -215,9 +215,7 @@ class Carrier(Pulse):
         x = x / self.samp_freq
         frequency, phase = self.extra_params
         phase_in_rad = phase * np.pi / 180
-        carrier = carrier * \
-            np.cos(2 * np.pi * frequency * x + phase_in_rad)
-        return carrier
+        return np.cos(2 * np.pi * frequency * x + phase_in_rad)
 
     def _pad(self, waveform, left, right):
         return self._waveform(np.arange(left, right))
