@@ -22,9 +22,11 @@ class Sequence(SweepableExpr):
         self._cached_samp_freq = 0
         [self._waveforms.append(np.array([])) for i in range(n_channels)]
 
-    def register(self, position, pulse, carrier=None, carrier_phases=[], carrier_frequencies=[], channel=None):
+    def register(self, position, pulse, carrier=None, frequency=None, phase=None, channel=None):
         if not carrier:
-            carrier = Carrier(carrier_frequencies, carrier_phases)
+            if frequency is None or phase is None:
+                raise Exception("Please provide information for carrier!")
+            carrier = Carrier(frequency, phase)
         if not channel and not isinstance(channel, int):
             for c in self._pulses:
                 c.append((position, pulse, carrier))

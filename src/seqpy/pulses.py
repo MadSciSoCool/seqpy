@@ -205,25 +205,18 @@ class Pulse(SweepableExpr):
 #
 # ------------------------------------------------
 
-
 class Carrier(Pulse):
-    def __init__(self, frequencies, phases) -> None:
+    def __init__(self, frequency, phase) -> None:
         super().__init__(left=np.inf, right=-np.inf)
-        if not hasattr(frequencies, '__iter__'):
-            frequencies = [frequencies]
-        if not hasattr(phases, '__iter__'):
-            phases = [phases]
-        self.frequencies = frequencies
-        self.phases = phases
+        self.frequency = frequency
+        self.phase = phase
 
     def _waveform(self, x):
         x = x / self.samp_freq
-        carrier = np.ones(len(x))
-        frequencies, phases = self.extra_params
-        for frequency, phase in zip(frequencies, phases):
-            phase_in_rad = phase * np.pi / 180
-            carrier = carrier * \
-                np.cos(2 * np.pi * frequency * x + phase_in_rad)
+        frequency, phase = self.extra_params
+        phase_in_rad = phase * np.pi / 180
+        carrier = carrier * \
+            np.cos(2 * np.pi * frequency * x + phase_in_rad)
         return carrier
 
     def _pad(self, waveform, left, right):
@@ -231,12 +224,12 @@ class Carrier(Pulse):
 
     @property
     def _extra_params(self):
-        return (self.frequencies, self.phases)
+        return (self.frequency, self.phase)
 
     def dump(self):
         dumped = super().dump()
         dumped["extra params"] = [str(p)
-                                  for p in self.frequencies + self.phases]
+                                  for p in (self.frequency, self.phase)]
         return dumped
 
 
