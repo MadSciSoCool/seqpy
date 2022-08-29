@@ -254,4 +254,4 @@ class Driver(LabberDriver):
                         self.change_flag = False
                         break
                     except Exception as e:
-                        raise(e)
+                        pass
