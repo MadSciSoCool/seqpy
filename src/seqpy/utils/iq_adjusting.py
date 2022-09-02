@@ -1,4 +1,4 @@
-from scipy.integrate import interp1d
+from scipy.interpolate import interp1d
 from seqpy.pulses import Carrier
 
 
