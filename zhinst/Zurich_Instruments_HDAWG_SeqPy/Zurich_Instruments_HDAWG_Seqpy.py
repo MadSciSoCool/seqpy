@@ -158,7 +158,7 @@ class Driver(LabberDriver):
                 self.update_sequence()
                 # to avoid some random error seen in the measurement
                 samp_freq = self.getValue("Device - Sample Clock")
-                for i in range(15):
+                for i in range(5):
                     try:
                         update_zhinst_awg(
                             self.controller,
@@ -168,9 +168,10 @@ class Driver(LabberDriver):
                             path=os.path.expanduser("~"),
                             samp_freq=samp_freq)
                         self.change_flag = False
-                        break
+                        return
                     except Exception as e:
-                        pass  # TODO: investigate the random error
+                        caught_exception = e
+                    raise caught_exception
 
     def get_json_path(self):
         # for sweeeping json file name

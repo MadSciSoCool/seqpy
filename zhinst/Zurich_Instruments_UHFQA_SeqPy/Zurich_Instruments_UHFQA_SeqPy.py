@@ -1,3 +1,4 @@
+from tkinter import E
 from seqpy import *
 import numpy as np
 from BaseDriver import LabberDriver
@@ -37,6 +38,7 @@ class Driver(LabberDriver):
         self.change_flag = False
         self.old_hash = ""
         self.sequence = Sequence()
+        self.data_buffer = [np.array([])] * 2
 
     def performClose(self, bError=False, options={}):
         """Perform the close instrument connection operation"""
@@ -155,24 +157,36 @@ class Driver(LabberDriver):
         elif quant.name == "Result Demod 1-2":
             # calculate 'demod 1-2' value
             return self.get_demod_12()
-        elif quant.name == 'QA Monitor - Input 1':
-            self.performArm()
-            while True:
-                if self.controller._get('/qas/0/monitor/acquired') == 0:
-                    value = quant.getTraceDict(self.controller._get(
-                        '/qas/0/monitor/inputs/0/wave'), dt=1/1.8e9)
-                    break
-            return value
-        elif quant.name == 'QA Monitor - Input 2':
-            self.performArm()
-            while True:
-                if self.controller._get('/qas/0/monitor/acquired') == 0:
-                    value = quant.getTraceDict(self.controller._get(
-                        '/qas/0/monitor/inputs/1/wave'), dt=1/1.8e9)
-                    break
-            return value
+        elif quant.name == "QA Monitor - Input 1":
+            if self.data_buffer[0].size == 0:
+                ch1, ch2 = self.get_qa_monitor_inputs()
+                self.data_buffer[1] = ch2
+                return quant.getTraceDict(ch1, dt=1/1.8e9)
+            else:
+                ch1 = self.data_buffer[0]
+                self.data_buffer[0] = np.array([])
+                return quant.getTraceDict(ch1, dt=1/1.8e9)
+        elif quant.name == "QA Monitor - Input 2":
+            if self.data_buffer[1].size == 0:
+                ch1, ch2 = self.get_qa_monitor_inputs()
+                self.data_buffer[0] = ch1
+                return quant.getTraceDict(ch2, dt=1/1.8e9)
+            else:
+                ch2 = self.data_buffer[1]
+                self.data_buffer[1] = np.array([])
+                return quant.getTraceDict(ch2, dt=1/1.8e9)
         else:
             return quant.getValue()
+
+    def get_qa_monitor_inputs(self):
+        self.performArm()
+        while True:
+            if self.controller._get('/qas/0/monitor/acquired') == 0:
+                ch1 = self.data_buffer[0] = self.controller._get(
+                    '/qas/0/monitor/inputs/0/wave')
+                ch2 = self.data_buffer[1] = self.controller._get(
+                    '/qas/0/monitor/inputs/1/wave')
+                return (ch1, ch2)
 
     def performArm(self):
         """Perform the instrument arm operation"""
@@ -216,7 +230,7 @@ class Driver(LabberDriver):
         self.controller.crosstalk_matrix(matrix)
 
     def get_demod_12(self):
-        """Assembles a complex value from real valued data on channel 1 and 2. 
+        """Assembles a complex value from real valued data on channel 1 and 2.
         The returned data will be (channel 1) + i * (channel 2).
         """
         data1 = self.controller.channels[0].result()
@@ -244,7 +258,7 @@ class Driver(LabberDriver):
                 self.old_hash = current_hash
             if self.change_flag:
                 self.update_sequence()
-                for i in range(15):
+                for i in range(5):
                     try:
                         update_zhinst_qa(
                             self.controller,
@@ -252,6 +266,7 @@ class Driver(LabberDriver):
                             path=os.path.expanduser("~"),
                             samp_freq=1.8e9)
                         self.change_flag = False
-                        break
+                        return
                     except Exception as e:
-                        pass
+                        caught_exception = e
+                raise caught_exception
