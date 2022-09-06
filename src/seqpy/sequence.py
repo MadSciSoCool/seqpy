@@ -13,7 +13,8 @@ class Sequence(SweepableExpr):
             raise Exception("n_channels could only be a postive integer")
         self._pulses = list()
         [self._pulses.append(list()) for i in range(n_channels)]
-        self._trigger_pos = 0
+        self._trigger_pos = [0]
+        self._marker_width = 100/2.4e9  # default value
         self.left = 0
         self.right = 0
         self._changed = False
@@ -40,10 +41,13 @@ class Sequence(SweepableExpr):
 
     @property
     def trigger_pos(self):
-        return self.retrieve_value(self._trigger_pos)
+        return np.array([self.retrieve_value(v) for v in self._trigger_pos])
 
     @trigger_pos.setter
-    def trigger_pos(self, position: int):
+    def trigger_pos(self, position):
+        # position: either list or float, will be converted to a iterable object anyway
+        position = [position] if not hasattr(
+            position, "__iter__") else position
         self._trigger_pos = position
 
     def length(self):
@@ -57,14 +61,12 @@ class Sequence(SweepableExpr):
             freq_changed_flag = True
             self._cached_samp_freq = self.samp_freq
         if self._changed or config.is_changed or freq_changed_flag:
-            offset = 0 if config.retrieve(
-                "PHASE_ALIGNMENT") == "Zero" else self.trigger_pos  # in time
             waveforms = list()
             for channel in self._pulses:
                 base = Pulse(left=np.inf, right=-np.inf)
                 for position, pulse, carrier in channel:
                     shifting_amount = self.retrieve_value(
-                        position) - offset  # in time
+                        position)  # in time
                     shifted = pulse.shift(shifting_amount)  # in time
                     base += carrier * shifted
                 waveforms.append(base)
@@ -84,18 +86,18 @@ class Sequence(SweepableExpr):
             # the range should include trigger position
             delay_offset = config.retrieve(
                 "TRIGGER_DELAY")*self.samp_freq  # in samples
-            trig_pos = self.trigger_pos*self.samp_freq if config.retrieve(
-                "PHASE_ALIGNMENT") == "Zero" else 0  # in samples
-            trig_left = trig_pos - delay_offset - 100  # in samples
-            trig_right = trig_pos - delay_offset + 100  # in samples
-            left = min(left, trig_left)
-            right = max(right, trig_right)
+            trig_pos = np.round(self.trigger_pos *
+                                self.samp_freq - delay_offset)  # in samples
+            trig_left = np.min(trig_pos) - 1  # in samples
+            trig_right = np.max(trig_pos) + self.marker_width * \
+                self.samp_freq  # in samples
+            left = int(min(left, trig_left))
+            right = int(max(right, trig_right))
             # padded to make the waveform to align with 16 samples (artifacts of zhinst)
             right += (left - right) % 16
-            wf_data = [wf._pad(wf.waveform, int(left), int(right))
-                       for wf in waveforms]
-            self.right = right + offset * self.samp_freq  # in sample
-            self.left = left + offset * self.samp_freq  # in sample
+            wf_data = [wf._pad(wf.waveform, left, right) for wf in waveforms]
+            self.right = right  # in sample
+            self.left = left  # in sample
             self._waveforms = [self._cap(wf) for wf in wf_data]
             self._changed = False
         return self._waveforms
@@ -120,7 +122,10 @@ class Sequence(SweepableExpr):
         base = np.zeros(self.length())
         delay_offset = config.retrieve(
             "TRIGGER_DELAY")*self.samp_freq if delay else 0  # in samples
-        base[int(self.trigger_pos*self.samp_freq - self.left-delay_offset):] = 1
+        for trig in self.trigger_pos:
+            trig_left = trig * self.samp_freq - self.left - delay_offset
+            base[int(trig_left):int(
+                trig_left+self.marker_width*self.samp_freq)] = 1
         return base
 
     def dump(self, file):
@@ -162,3 +167,11 @@ class Sequence(SweepableExpr):
     @samp_freq.setter
     def samp_freq(self, value):
         self._samp_freq = value
+
+    @property
+    def marker_width(self):
+        return self.retrieve_value(self._marker_width)
+
+    @marker_width.setter
+    def marker_width(self, value):
+        self._marker_width = value

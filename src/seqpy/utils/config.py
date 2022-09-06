@@ -12,7 +12,6 @@ class Configuration:
         self._config = {
             "SAMPLING_FREQUENCY": 2.4e9,
             # "QA_SAMPLING_FREQUENCY": 1.8e9,
-            "PHASE_ALIGNMENT": "Trigger",
             "TRIGGER_DELAY": 0
         }
         self._supported = self._config.keys()
@@ -74,7 +73,6 @@ class Configuration:
 
     @staticmethod
     def _validate(config):
-        assert(config["PHASE_ALIGNMENT"] in ("Trigger", "Zero"))
         assert(isinstance(config["TRIGGER_DELAY"], int))
         # for key in ("SAMPLING_FREQUENCY", "QA_SAMPLING_FREQUENCY"):
         for key in ("SAMPLING_FREQUENCY",):

@@ -222,14 +222,7 @@ class Carrier(Pulse):
 
     @property
     def _extra_params(self):
-        return (self.frequency, self.phase)
-
-    def dump(self):
-        dumped = super().dump()
-        dumped["extra params"] = [str(p)
-                                  for p in (self.frequency, self.phase)]
-        return dumped
-
+        return [self.frequency, self.phase]
 
 # ------------------------------------------------
 #

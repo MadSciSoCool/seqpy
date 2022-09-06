@@ -4,18 +4,33 @@ from sympy.parsing.sympy_parser import parse_expr
 import re
 
 
+def flatten(input):
+    if isinstance(input, list) or isinstance(input, tuple):
+        for l in input:
+            for y in flatten(l):
+                yield y
+    else:
+        yield input
+
+
+def typed(expr):
+    expr_type = str(type(expr))
+    if ("list" or "tuple") in expr_type:
+        return [typed(v) for v in expr]
+    if ("Zero" or "One" or "Integer") in expr_type:
+        return int(expr)
+    elif ("Float" or "Infinity") in expr_type:
+        return float(expr)  # Float or Infinity
+    else:
+        return expr  # a 'real' sympy expression
+
+
 def str2expr(string):
     if isinstance(string, list) or isinstance(string, tuple):
         return [str2expr(o) for o in string]
     else:
         expr = parse_expr(string)
-        expr_type = str(type(expr))
-        if "Int" in expr_type:
-            return int(expr)
-        elif ("Float" or "Infinity") in expr_type:
-            return float(expr)  # Float or Infinity
-        else:
-            return expr  # a 'real' sympy expression
+        return typed(expr)
 
 
 def collect_sym(expr):
@@ -23,8 +38,10 @@ def collect_sym(expr):
         return set.union(*[collect_sym(e) for e in expr])
     else:
         syms = set()
-        for sym in parse_expr(expr).atoms(Symbol):
-            syms.add(sym.name)
+        parsed = flatten([parse_expr(expr)])
+        for e in parsed:
+            for sym in e.atoms(Symbol):
+                syms.add(sym.name)
         return syms
 
 
@@ -38,13 +55,7 @@ def dict2atom(dumped: dict):
                         dumped["gain"],
                         dumped["offset"],
                         dumped["extra params"]])
-    if class_type == "Carrier":
-        full_length = len(dumped["extra params"])
-        init_params = str2expr(
-            [dumped["extra params"][:int(full_length/2)],
-             dumped["extra params"][int(full_length/2):]])
-    else:
-        init_params = str2expr(dumped["extra params"])
+    init_params = str2expr(dumped["extra params"])
     base = eval(class_type)(*init_params)
     displacement = str2expr(dumped["displacement"])
     gain = str2expr(dumped["gain"])
