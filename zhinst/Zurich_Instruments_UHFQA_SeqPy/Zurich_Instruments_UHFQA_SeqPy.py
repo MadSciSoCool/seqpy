@@ -1,4 +1,3 @@
-from tkinter import E
 from seqpy import *
 import numpy as np
 from BaseDriver import LabberDriver
@@ -157,24 +156,29 @@ class Driver(LabberDriver):
         elif quant.name == "Result Demod 1-2":
             # calculate 'demod 1-2' value
             return self.get_demod_12()
-        elif quant.name == "QA Monitor - Input 1":
-            if self.data_buffer[0].size == 0:
-                ch1, ch2 = self.get_qa_monitor_inputs()
-                self.data_buffer[1] = ch2
-                return quant.getTraceDict(ch1, dt=1/1.8e9)
-            else:
-                ch1 = self.data_buffer[0]
-                self.data_buffer[0] = np.array([])
-                return quant.getTraceDict(ch1, dt=1/1.8e9)
-        elif quant.name == "QA Monitor - Input 2":
-            if self.data_buffer[1].size == 0:
-                ch1, ch2 = self.get_qa_monitor_inputs()
-                self.data_buffer[0] = ch1
-                return quant.getTraceDict(ch2, dt=1/1.8e9)
-            else:
-                ch2 = self.data_buffer[1]
-                self.data_buffer[1] = np.array([])
-                return quant.getTraceDict(ch2, dt=1/1.8e9)
+        elif quant.name == "QA Monitor - Inputs":
+            ch1, ch2 = self.get_qa_monitor_inputs()
+            combined = np.array([ch1, ch2])
+            return quant.getTraceDict(combined, dt=1/1.8e9)
+        # elif quant.name == "QA Monitor - Input 1":
+        #     buffered = self.data_buffer[0]
+        #     if self.data_buffer[0].size == 0: # ch1 not buffered
+        #         ch1, ch2 = self.get_qa_monitor_inputs()
+        #         self.data_buffer[1] = ch2
+        #         return quant.getTraceDict(ch1, dt=1/1.8e9)
+        #     else: # ch1 buffereda
+        #         ch1 = self.data_buffer[0]
+        #         self.data_buffer[0] = np.array([])
+        #         return quant.getTraceDict(ch1, dt=1/1.8e9)
+        # elif quant.name == "QA Monitor - Input 2":
+        #     if self.data_buffer[1].size == 0: # ch2 not buffered
+        #         ch1, ch2 = self.get_qa_monitor_inputs()
+        #         self.data_buffer[0] = ch1
+        #         return quant.getTraceDict(ch2, dt=1/1.8e9)
+        #     else:
+        #         ch2 = self.data_buffer[1]
+        #         self.data_buffer[1] = np.array([])
+        #         return quant.getTraceDict(ch2, dt=1/1.8e9)
         else:
             return quant.getValue()
 
