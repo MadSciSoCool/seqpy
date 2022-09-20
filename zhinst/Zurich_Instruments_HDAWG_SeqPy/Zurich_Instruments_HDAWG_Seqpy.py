@@ -1,9 +1,8 @@
-from BaseDriver import LabberDriver, Error
+from BaseDriver import LabberDriver
 import zhinst.toolkit as tk
 from seqpy import *
 import numpy as np
 import os
-import sys
 import hashlib
 import re
 
@@ -171,7 +170,7 @@ class Driver(LabberDriver):
                         return
                     except Exception as e:
                         caught_exception = e
-                    raise caught_exception
+                raise caught_exception
 
     def get_json_path(self):
         # for sweeeping json file name
