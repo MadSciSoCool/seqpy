@@ -1,5 +1,6 @@
 from os import path
 import zhinst.utils as zu
+from zhinst.toolkit import Sequence, Waveforms
 import numpy as np
 import copy
 
@@ -150,7 +151,6 @@ class WaveformContainer:
 
 def update_zhinst_awg(awg, sequence, period, repetitions, path="", samp_freq=None):
     waveforms = copy.deepcopy(sequence.waveforms(samp_freq=samp_freq))
-    length = sequence.length()
     # pad one channel if odd
     n_channels = len(waveforms)
     if n_channels > 8:
@@ -220,3 +220,41 @@ def update_zhinst_qa(qa, sequence, path="", samp_freq=None):
     qa.awg.reset_queue()
     qa.awg.queue_waveform(*waveforms)
     qa.awg.compile_and_upload_waveforms()
+
+
+def update_zhinst_hdawg(hdawg, sequence, period, repetitions, path="", samp_freq=None):
+    waveforms = copy.deepcopy(sequence.waveforms(samp_freq=samp_freq))
+    # pad one channel if odd
+    n_channels = len(waveforms)
+    if n_channels > 8:
+        raise(Exception(
+            "the maximum channel number supported for Zurich Instruments HDAWG is 8."))
+    if n_channels % 2 == 1:
+        waveforms.append(np.zeros(sequence.length()))
+        n_channels += 1
+    hdawg.awgs[0].stop()  # need to stop before change channel grouping
+    hdawg.system.awg.channelgrouping(
+        np.log2(n_channels - 1))  # update channel group in zhinst-toolkit 0->2*4, 1->4*2, 2->8*1
+    # find active time
+    active_times = find_active_time(waveforms + [sequence.marker_waveform()])
+    # generate and compile the .seqc file
+    seqc = seqc_generation(active_times=active_times,
+                           n_channels=n_channels,
+                           total_length=sequence.length(),
+                           repetitions=repetitions,
+                           period=period,
+                           file_path=path)
+    awg_program = Sequence()
+    awg_program.code = seqc.file_string
+    elf_file, info = awg.awgs[0].compile_sequencer_program(awg_program)
+    # queue the waveforms
+    waveforms = Waveforms()
+    for i in range(n_channels//2):
+        for start, end in active_times:
+            waveforms[i] = (waveforms[2 * i][start:end],
+                            waveforms[2 * i + 1][start:end],
+                            sequence.marker_waveform()[start:end])
+    # set up everything
+    with hdawg.set_transaction():
+        hdawg.awgs[0].elf.data(elf_file)
+        hdawg.awgs[0].write_to_waveform_memory(waveforms)
