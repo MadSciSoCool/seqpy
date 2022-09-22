@@ -52,12 +52,12 @@ class Driver(LabberDriver):
         if quant.set_cmd:
             value = self.set_node_value(quant, value)
 
-        # sequencer outputs
-        if "Sequencer" in quant.name and "Output" in quant.name:
-            if int(quant.name[-1]) % 2:
-                self.controller.awgs[0].output1(int(value))
-            else:
-                self.controller.awgs[0].output2(int(value))
+        # # sequencer outputs
+        # if "Sequencer" in quant.name and "Output" in quant.name:
+        #     if int(quant.name[-1]) % 2:
+        #         self.controller.awgs[0].output1(int(value))
+        #     else:
+        #         self.controller.awgs[0].output2(int(value))
 
         # sequencer start / stop
         if quant.name.endswith("Run"):
@@ -82,7 +82,7 @@ class Driver(LabberDriver):
         return the actual value set by the instrument"""
         if quant.get_cmd:
             node = self.controller.root.raw_path_to_node(quant.set_cmd)
-            return node()
+            return node(enum=False)
         elif quant.name.startswith("Waveforms"):
             self.update_sequence()
             n_channels = len(self.sequence.waveforms())
@@ -146,7 +146,7 @@ class Driver(LabberDriver):
                 self.old_hash = current_hash
             if self.change_flag:
                 # require for using trigger signal
-                self.setValue("Marker Out - Signal 1", 4)
+                # self.setValue("Marker Out - Signal 1", 4)
                 self.update_sequence()
                 # to avoid some random error seen in the measurement
                 samp_freq = self.getValue("Device - Sample Clock")

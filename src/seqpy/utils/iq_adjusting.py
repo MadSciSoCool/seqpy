@@ -2,6 +2,7 @@ from sympy import Piecewise
 from sympy.abc import x
 from seqpy.pulses import Carrier
 import numpy as np
+from scipy.interpolate import interp1d
 
 
 def interpolating_linear(sym, xdata, ydata):
@@ -25,13 +26,19 @@ class IQShifter:
         self.phase_curve = lambda x: 0
 
     def load_amplitude_calibration(self, freq, optimal_amp):
-        self.amp_curve = interpolating_linear(x, freq, optimal_amp)
+        # self.amp_curve = interpolating_linear(x, freq, optimal_amp)
+        self.amp_curve = interp1d(freq, optimal_amp)
 
     def load_phase_calibration(self, freq, optimal_phase):
-        self.phase_curve = interpolating_linear(x, freq, optimal_phase)
+        # self.phase_curve = interpolating_linear(x, freq, optimal_phase)
+        self.phase_curve = interp1d(freq, optimal_phase)
+
+    # def shift(self, I):
+    #     frequency, phase = I.frequency, I.phase
+    #     shifted_amp = self.amp_curve.subs(x, I.frequency)
+    #     shifted_phase = self.phase_curve.subs(x, I.frequency)
+    #     return shifted_amp * Carrier(frequency, phase - 90 + shifted_phase)
 
     def shift(self, I):
         frequency, phase = I.frequency, I.phase
-        shifted_amp = self.amp_curve.subs(x, I.frequency)
-        shifted_phase = self.phase_curve.subs(x, I.frequency)
-        return shifted_amp * Carrier(frequency, phase - 90 + shifted_phase)
+        return self.amp_curve(frequency) * Carrier(frequency, phase - 90 + self.phase_curve(frequency))

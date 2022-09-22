@@ -23,8 +23,8 @@ class Driver(LabberDriver):
 
     def performOpen(self, options={}):
         """Perform the operation of opening the instrument connection"""
-        session = Session(HOST)
-        self.controller = session.connect_device(self.comCfg.address[:7])
+        self.session = Session(HOST)
+        self.controller = self.session.connect_device(self.comCfg.address[:7])
         self.last_length = [0] * 2
         self.change_flag = False
         self.old_hash = ""
@@ -107,24 +107,16 @@ class Driver(LabberDriver):
         if quant.get_cmd:
             # if a 'get_cmd' is defined, use it to return the node value
             node = self.controller.root.raw_path_to_node(quant.set_cmd)
-            return node()
+            return node(enum=False)
         elif quant.name.startswith("Result Vector - QB"):
-            self.performArm()
             # get the result vector
             i = int(quant.name[-2:]) - 1
-            while True:
-                if self.controller.qas[0].result.acquired() == 0:
-                    value = self.controller.qas[0].result.data[i].wave()
-                    break
+            value = self.get_qa_result([i])
             return quant.getTraceDict(value, x0=0, dx=1)
         elif quant.name.startswith("Result Avg - QB"):
-            self.performArm()
             # get the _averaged_ result vector
             i = int(quant.name[-2:]) - 1
-            while True:
-                if self.controller.qas[0].result.acquired() == 0:
-                    value = self.controller.qas[0].result.data[i].wave()
-                    break
+            value = self.get_qa_result([i])
             if self.isHardwareLoop(options):
                 index, _ = self.getHardwareLoopIndex(options)
                 return value[index]
@@ -139,6 +131,61 @@ class Driver(LabberDriver):
             return quant.getTraceDict(combined, dt=1/1.8e9)
         else:
             return quant.getValue()
+
+    def get_qa_monitor_inputs(self):
+        result_wave_nodes = [
+            self.controller.qas[0].monitor.inputs[i].wave for i in (0, 1)]
+        for node in result_wave_nodes:
+            node.subscribe()
+        self.performArm()
+        RESULT_LENGTH = self.controller.qas[0].monitor.length()
+        captured_data = {path: [] for path in result_wave_nodes}
+        capture_done = False
+        # main capture loop
+        while not capture_done:
+            # if start_time + timeout < time.time():
+            #     raise TimeoutError('Timeout before all samples collected.')
+            dataset = self.session.poll(recording_time=.5, timeout=5)
+            for k, v in dataset.copy().items():
+                if k in captured_data.keys():
+                    n_records = sum(len(x) for x in captured_data[k])
+                    if n_records != RESULT_LENGTH:
+                        captured_data[k].append(v[0]['vector'])
+                    else:
+                        dataset.pop(k)
+            if not dataset:
+                capture_done = True
+                break
+        self.controller.qas[0].result.data.unsubscribe()
+        return list(captured_data.values())
+
+    def get_qa_result(self, chs):
+        result_wave_nodes = list()
+        for ch in chs:
+            node = self.controller.qas[0].result.data[ch].wave
+            node.subscribe()
+            result_wave_nodes.append(node)
+        self.performArm()
+        RESULT_LENGTH = self.controller.qas[0].result.length()
+        captured_data = {path: [] for path in result_wave_nodes}
+        capture_done = False
+        # main capture loop
+        while not capture_done:
+            # if start_time + timeout < time.time():
+            #     raise TimeoutError('Timeout before all samples collected.')
+            dataset = self.session.poll(recording_time=.5, timeout=5)
+            for k, v in dataset.copy().items():
+                if k in captured_data.keys():
+                    n_records = sum(len(x) for x in captured_data[k])
+                    if n_records != RESULT_LENGTH:
+                        captured_data[k].append(v[0]['vector'])
+                    else:
+                        dataset.pop(k)
+            if not dataset:
+                capture_done = True
+                break
+        self.controller.qas[0].result.data.unsubscribe()
+        return list(captured_data.values())
 
     def update_integration_weights(self, i):
         # set the i-th integration weights
@@ -155,14 +202,6 @@ class Driver(LabberDriver):
         self.controller.qas[0].integration.weights[i].real(real_part)
         self.controller.qas[0].integration.weights[i].imag(imag_part)
 
-    def get_qa_monitor_inputs(self):
-        self.performArm()
-        while True:
-            if self.controller.qas[0].monitor.acquired() == 0:
-                ch1 = self.controller.qas[0].monitor.inputs[0].wave()
-                ch2 = self.controller.qas[0].monitor.inputs[1].wave()
-                return (ch1, ch2)
-
     def performArm(self):
         """Perform the instrument arm operation"""
         if self.getValue("QA Monitor - Enable"):
@@ -171,7 +210,6 @@ class Driver(LabberDriver):
         if self.getValue("QA Results - Enable"):
             self.controller.qas[0].result.reset(1)
             self.controller.qas[0].result.enable(1, deep=True)
-            self.controller.arm()
         # if self.getValue("Sequencer - Trigger Mode") == "External Trigger":
         #     self.controller.awg.run()
 
@@ -239,7 +277,6 @@ class Driver(LabberDriver):
                         update_zhinst_uhfqa(
                             self.controller,
                             self.sequence,
-                            path=os.path.expanduser("~"),
                             samp_freq=1.8e9)
                         self.change_flag = False
                         return
