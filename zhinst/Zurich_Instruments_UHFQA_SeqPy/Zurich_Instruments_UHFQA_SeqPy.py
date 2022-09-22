@@ -89,7 +89,7 @@ class Driver(LabberDriver):
 
         # sequencer start / stop
         if quant.name.endswith("Run"):
-            self.update_zhinst_qa()
+            self.update_zhinst_uhfqa()
             value = self.awg_start_stop(quant, value)
 
         # all channel parameters
@@ -117,10 +117,10 @@ class Driver(LabberDriver):
             self.change_flag = True
 
         if quant.name.endswith("Update AWG"):
-            self.update_zhinst_qa()
+            self.update_zhinst_uhfqa()
 
         if self.isFinalCall(options):
-            self.update_zhinst_qa()
+            self.update_zhinst_uhfqa()
             self.awg_start_stop(quant, 1)
 
         # return the value that was set on the device ...
@@ -253,7 +253,7 @@ class Driver(LabberDriver):
                 if key is not "":
                     self.sequence.subs(key, value)
 
-    def update_zhinst_qa(self):
+    def update_zhinst_uhfqa(self):
         json_path = self.getValue("SeqPy - Json Path")
         if os.path.exists(json_path):
             current_hash = hash_file(json_path)
@@ -264,7 +264,7 @@ class Driver(LabberDriver):
                 self.update_sequence()
                 for i in range(5):
                     try:
-                        update_zhinst_qa(
+                        update_zhinst_uhfqa(
                             self.controller,
                             self.sequence,
                             path=os.path.expanduser("~"),

@@ -1,5 +1,5 @@
 from BaseDriver import LabberDriver
-import zhinst.toolkit as tk
+from zhinst.toolkit import Session
 from seqpy import *
 import numpy as np
 import os
@@ -31,17 +31,8 @@ class Driver(LabberDriver):
 
     def performOpen(self, options={}):
         """Perform the operation of opening the instrument connection"""
-        # get the interface selected in UI, restrict to either 'USB' or '1GbE'
-        interface = self.comCfg.interface
-        if not interface == "USB":
-            interface = "1GbE"
-        # initialize controller and connect
-        self.controller = tk.HDAWG(
-            self.comCfg.name, self.comCfg.address[:
-                                                  7], interface=interface, host=HOST
-        )
-        self.controller.setup()
-        self.controller.connect_device()
+        session = Session(HOST)
+        self.controller = session.connect_device(self.comCfg.address[:7])
 
     def performClose(self, bError=False, options={}):
         """Perform the close instrument connection operation"""
@@ -70,7 +61,7 @@ class Driver(LabberDriver):
 
         # sequencer start / stop
         if quant.name.endswith("Run"):
-            self.update_zhinst_awg()
+            self.update_zhinst_hdawg()
             value = self.awg_start_stop(quant, value)
 
         if quant.name.startswith("SeqPy"):
@@ -78,10 +69,10 @@ class Driver(LabberDriver):
 
         # compilation button
         if quant.name.endswith("Update AWG"):
-            self.update_zhinst_awg()
+            self.update_zhinst_hdawg()
 
         if self.isFinalCall(options):
-            self.update_zhinst_awg()
+            self.update_zhinst_hdawg()
             self.awg_start_stop(quant, 1)
 
         return value
@@ -90,7 +81,8 @@ class Driver(LabberDriver):
         """Perform the Set Value instrument operation. This function should
         return the actual value set by the instrument"""
         if quant.get_cmd:
-            return self.controller._get(quant.get_cmd)
+            node = self.controller.root.raw_path_to_node(quant.set_cmd)
+            return node()
         elif quant.name.startswith("Waveforms"):
             self.update_sequence()
             n_channels = len(self.sequence.waveforms())
@@ -113,25 +105,26 @@ class Driver(LabberDriver):
 
     def set_node_value(self, quant, value):
         """Handles setting of nodes with 'set_cmd'."""
+        node = self.controller.root.raw_path_to_node(quant.set_cmd)
         if quant.datatype == quant.COMBO:
             i = quant.getValueIndex(value)
             if len(quant.cmd_def) == 0:
-                self.controller._set(quant.set_cmd, i)
+                node(i)
             else:
-                self.controller._set(quant.set_cmd, quant.cmd_def[i])
+                node(quant.cmd_def[i])
         else:
-            self.controller._set(quant.set_cmd, value)
-        return self.controller._get(quant.get_cmd)
+            node(value)
+        return node()
 
     def awg_start_stop(self, quant, value):
         """Starts or stops the respective AWG Core depending on the value."""
         if value:
-            self.controller.awgs[0].run()
+            self.controller.awgs[0].enable(1)
         else:
-            self.controller.awgs[0].stop()
-        if self.controller._get(f"awgs/{0}/single"):
+            self.controller.awgs[0].enable(0)
+        if self.controller.awgs[0].single():
             self.controller.awgs[0].wait_done()
-        return self.controller.awgs[0].is_running
+        # return self.controller.awgs[0].is_running
 
     def update_sequence(self):
         json_path = self.getValue("SeqPy - Json Path")
@@ -144,7 +137,7 @@ class Driver(LabberDriver):
                     self.sequence.subs(key, value)
             self.sequence.samp_freq = self.getValue("Device - Sample Clock")
 
-    def update_zhinst_awg(self):
+    def update_zhinst_hdawg(self):
         json_path = self.get_json_path()
         if os.path.exists(json_path):
             current_hash = hash_file(json_path)
@@ -159,12 +152,11 @@ class Driver(LabberDriver):
                 samp_freq = self.getValue("Device - Sample Clock")
                 for i in range(5):
                     try:
-                        update_zhinst_awg(
+                        update_zhinst_hdawg(
                             self.controller,
                             self.sequence,
                             self.getValue("SeqPy - Period") * samp_freq,
                             int(self.getValue("SeqPy - Repetitions")),
-                            path=os.path.expanduser("~"),
                             samp_freq=samp_freq)
                         self.change_flag = False
                         return
