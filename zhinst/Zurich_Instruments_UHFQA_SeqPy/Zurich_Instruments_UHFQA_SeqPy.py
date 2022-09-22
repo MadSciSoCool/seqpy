@@ -45,11 +45,6 @@ class Driver(LabberDriver):
 
         quant.setValue(value)
 
-        if self.isFirstCall(options):
-            self.sequencer_updated = False
-            self.waveforms_updated = [False] * 2
-            self.replace_waveform = False
-
         loop_index, n_HW_loop = self.getHardwareLoopIndex(options)
 
         # if a 'set_cmd' is defined, just set the node
@@ -91,7 +86,6 @@ class Driver(LabberDriver):
             i = int(name[1]) - 1
             if name[3] in ("Frequency", "Amplitude", "Phase"):
                 self.update_integration_weights(i)
-                self.sequencer_updated = True
             if name[3] == "Enable":
                 pass
 
