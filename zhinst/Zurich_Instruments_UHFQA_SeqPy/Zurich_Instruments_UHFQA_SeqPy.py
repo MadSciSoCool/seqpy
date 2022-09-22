@@ -1,7 +1,7 @@
 from seqpy import *
 import numpy as np
+from zhinst.toolkit import Session
 from BaseDriver import LabberDriver
-import zhinst.toolkit as tk
 import os
 import hashlib
 
@@ -23,16 +23,8 @@ class Driver(LabberDriver):
 
     def performOpen(self, options={}):
         """Perform the operation of opening the instrument connection"""
-        interface = self.comCfg.interface
-        if not interface == "USB":
-            interface = "1GbE"
-        # initialize controller and connect
-        self.controller = tk.UHFQA(
-            self.comCfg.name, self.comCfg.address[:
-                                                  7], interface=interface, host=HOST
-        )
-        self.controller.setup()
-        self.controller.connect_device()
+        session = Session(HOST)
+        self.controller = session.connect_device(self.comCfg.address[:7])
         self.last_length = [0] * 2
         self.change_flag = False
         self.old_hash = ""
@@ -64,54 +56,44 @@ class Driver(LabberDriver):
         if quant.set_cmd:
             value = self.set_node_value(quant, value)
 
-        # sequencer outputs
-        if quant.name == "Control - Output 1":
-            self.controller.awg.output1(int(value))
+        # TODO implementing these functions
+        # # sequencer outputs
+        # if quant.name == "Control - Output 1":
+        #     self.controller.awg.output1(int(value))
 
-        if quant.name == "Control - Output 2":
-            self.controller.awg.output2(int(value))
+        # if quant.name == "Control - Output 2":
+        #     self.controller.awg.output2(int(value))
 
-        # sequencer gains
-        if quant.name == "Control - Gain 1":
-            self.controller.awg.gain1(value)
+        # # sequencer gains
+        # if quant.name == "Control - Gain 1":
+        #     self.controller.awg.gain1(value)
 
-        if quant.name == "Control - Gain 2":
-            self.controller.awg.gain2(value)
+        # if quant.name == "Control - Gain 2":
+        #     self.controller.awg.gain2(value)
 
         # crosstalk - reset button
         if quant.name == "Crosstalk - Reset":
             self.set_cosstalk_matrix(np.eye(10))
 
         # integration time
-        if quant.name == "Integration - Time":
-            self.controller.integration_time(value)
-            value = self.controller.integration_time()
+        if quant.name == "Integration - Length":
+            self.controller.qas[0].integration.length(int(value))
+            value = self.controller.qas[0].integration.length()
 
         # sequencer start / stop
         if quant.name.endswith("Run"):
             self.update_zhinst_uhfqa()
             value = self.awg_start_stop(quant, value)
 
-        # all channel parameters
+        # channel parameters for integration weights
         if quant.name.startswith("Channel"):
             name = quant.name.split(" ")
             i = int(name[1]) - 1
-            channel = self.controller.channels[i]
-            if name[3] == "Rotation":
-                value = channel.rotation(value)
-            if name[3] == "Threshold":
-                value = channel.threshold(value)
-            if name[3] == "Frequency":
-                value = channel.readout_frequency(value)
-                self.sequencer_updated = True
-            if name[3] == "Amplitude":
-                value = channel.readout_amplitude(value)
-                self.sequencer_updated = True
-            if name[3] == "Phase":
-                value = channel.phase_shift(value)
+            if name[3] in ("Frequency", "Amplitude", "Phase"):
+                self.update_integration_weights(i)
                 self.sequencer_updated = True
             if name[3] == "Enable":
-                channel.enable() if value else channel.disable()
+                pass
 
         if quant.name.startswith("SeqPy"):
             self.change_flag = True
@@ -130,14 +112,15 @@ class Driver(LabberDriver):
         """Perform the Get Value instrument operation"""
         if quant.get_cmd:
             # if a 'get_cmd' is defined, use it to return the node value
-            return self.controller._get(quant.get_cmd)
+            node = self.controller.root.raw_path_to_node(quant.set_cmd)
+            return node()
         elif quant.name.startswith("Result Vector - QB"):
             self.performArm()
             # get the result vector
             i = int(quant.name[-2:]) - 1
             while True:
-                if self.controller._get('/qas/0/result/acquired') == 0:
-                    value = self.controller.channels[i].result()
+                if self.controller.qas[0].result.acquired() == 0:
+                    value = self.controller.qas[0].result.data[i].wave()
                     break
             return quant.getTraceDict(value, x0=0, dx=1)
         elif quant.name.startswith("Result Avg - QB"):
@@ -145,8 +128,8 @@ class Driver(LabberDriver):
             # get the _averaged_ result vector
             i = int(quant.name[-2:]) - 1
             while True:
-                if self.controller._get('/qas/0/result/acquired') == 0:
-                    value = self.controller.channels[i].result()
+                if self.controller.qas[0].result.acquired() == 0:
+                    value = self.controller.qas[0].result.data[i].wave()
                     break
             if self.isHardwareLoop(options):
                 index, _ = self.getHardwareLoopIndex(options)
@@ -160,70 +143,65 @@ class Driver(LabberDriver):
             ch1, ch2 = self.get_qa_monitor_inputs()
             combined = np.array([ch1, ch2])
             return quant.getTraceDict(combined, dt=1/1.8e9)
-        # elif quant.name == "QA Monitor - Input 1":
-        #     buffered = self.data_buffer[0]
-        #     if self.data_buffer[0].size == 0: # ch1 not buffered
-        #         ch1, ch2 = self.get_qa_monitor_inputs()
-        #         self.data_buffer[1] = ch2
-        #         return quant.getTraceDict(ch1, dt=1/1.8e9)
-        #     else: # ch1 buffereda
-        #         ch1 = self.data_buffer[0]
-        #         self.data_buffer[0] = np.array([])
-        #         return quant.getTraceDict(ch1, dt=1/1.8e9)
-        # elif quant.name == "QA Monitor - Input 2":
-        #     if self.data_buffer[1].size == 0: # ch2 not buffered
-        #         ch1, ch2 = self.get_qa_monitor_inputs()
-        #         self.data_buffer[0] = ch1
-        #         return quant.getTraceDict(ch2, dt=1/1.8e9)
-        #     else:
-        #         ch2 = self.data_buffer[1]
-        #         self.data_buffer[1] = np.array([])
-        #         return quant.getTraceDict(ch2, dt=1/1.8e9)
         else:
             return quant.getValue()
+
+    def update_integration_weights(self, i):
+        # set the i-th integration weights
+        frequency = self.getValue(f"Channel {i+1} - Frequency")
+        amplitude = self.getValue(f"Channel {i+1} - Amplitude")
+        phase_shift = self.getValue(f"Channel {i+1} - Phase Shift")
+        phase_in_rad = phase_shift * np.pi / 180
+        samp_freq = 1.8e9
+        x = np.arange(4097)
+        real_part = amplitude * \
+            np.cos(phase_in_rad + x * 2 * np.pi * frequency / samp_freq)
+        imag_part = amplitude * \
+            np.sin(phase_in_rad + x * 2 * np.pi * frequency / samp_freq)
+        self.controller.qas[0].integration.weights[i].real(real_part)
+        self.controller.qas[0].integration.weights[i].imag(imag_part)
 
     def get_qa_monitor_inputs(self):
         self.performArm()
         while True:
-            if self.controller._get('/qas/0/monitor/acquired') == 0:
-                ch1 = self.data_buffer[0] = self.controller._get(
-                    '/qas/0/monitor/inputs/0/wave')
-                ch2 = self.data_buffer[1] = self.controller._get(
-                    '/qas/0/monitor/inputs/1/wave')
+            if self.controller.qas[0].monitor.acquired() == 0:
+                ch1 = self.controller.qas[0].monitor.inputs[0].wave()
+                ch2 = self.controller.qas[0].monitor.inputs[1].wave()
                 return (ch1, ch2)
 
     def performArm(self):
         """Perform the instrument arm operation"""
         if self.getValue("QA Monitor - Enable"):
-            self.controller._set("/qas/0/monitor/reset", 1)
-            self.controller._set("/qas/0/monitor/enable", 1)
+            self.controller.qas[0].monitor.reset(1)
+            self.controller.qas[0].monitor.enable(1, deep=True)
         if self.getValue("QA Results - Enable"):
-            self.controller._set("/qas/0/result/reset", 1)
-            self.controller._set("/qas/0/result/enable", 1)
+            self.controller.qas[0].result.reset(1)
+            self.controller.qas[0].result.enable(1, deep=True)
             self.controller.arm()
         # if self.getValue("Sequencer - Trigger Mode") == "External Trigger":
         #     self.controller.awg.run()
 
     def set_node_value(self, quant, value):
+        node = self.controller.root.raw_path_to_node(quant.set_cmd)
         if quant.datatype == quant.COMBO:
             i = quant.getValueIndex(value)
             if len(quant.cmd_def) == 0:
-                self.controller._set(quant.set_cmd, i)
+                node(i)
             else:
-                self.controller._set(quant.set_cmd, quant.cmd_def[i])
+                node(quant.cmd_def[i])
         else:
-            self.controller._set(quant.set_cmd, value)
-        return self.controller._get(quant.get_cmd)
+            node(value)
+        return node()
 
     def awg_start_stop(self, quant, value):
         """Handles setting of nodes with 'set_cmd'."""
         if value:
-            self.controller.awg.run()
+            self.controller.awgs[0].enable(1)
         else:
-            self.controller.awg.stop()
-        if self.controller._get("awgs/0/single"):
-            self.controller.awg.wait_done()
-        return self.controller.awg.is_running
+            self.controller.awgs[0].enable(0)
+        if self.controller.awgs[0].single():
+            self.controller.awgs[0].wait_done()
+        # return self.controller.awg.is_running
 
     def set_cosstalk_matrix(self, matrix):
         """Set the crosstalk matrix as a 2D numpy array."""
@@ -231,7 +209,7 @@ class Driver(LabberDriver):
         for r in range(rows):
             for c in range(cols):
                 self.setValue(f"Crosstalk - {r+1} , {c+1}", matrix[r, c])
-        self.controller.crosstalk_matrix(matrix)
+        self.controller.qas[0].crosstalk_matrix(matrix)
 
     def get_demod_12(self):
         """Assembles a complex value from real valued data on channel 1 and 2.
