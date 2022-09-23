@@ -140,23 +140,19 @@ class Driver(LabberDriver):
         self.performArm()
         RESULT_LENGTH = self.controller.qas[0].monitor.length()
         captured_data = {path: [] for path in result_wave_nodes}
-        capture_done = False
+        capture_done = {path: False for path in result_wave_nodes}
         # main capture loop
-        while not capture_done:
+        while not np.all(np.array(list(capture_done.values()))):
             # if start_time + timeout < time.time():
             #     raise TimeoutError('Timeout before all samples collected.')
-            dataset = self.session.poll(recording_time=.5, timeout=5)
+            dataset = self.session.poll()
             for k, v in dataset.copy().items():
                 if k in captured_data.keys():
                     n_records = sum(len(x) for x in captured_data[k])
                     if n_records != RESULT_LENGTH:
                         captured_data[k].append(v[0]['vector'])
-                    else:
-                        dataset.pop(k)
-            if not dataset:
-                capture_done = True
-                break
-        self.controller.qas[0].result.data.unsubscribe()
+                        capture_done[k] = True
+        self.controller.qas[0].monitor.inputs.unsubscribe()
         return list(captured_data.values())
 
     def get_qa_result(self, chs):
@@ -170,10 +166,10 @@ class Driver(LabberDriver):
         captured_data = {path: [] for path in result_wave_nodes}
         capture_done = False
         # main capture loop
-        while not capture_done:
+        while not np.all(np.array(list(capture_done.values()))):
             # if start_time + timeout < time.time():
             #     raise TimeoutError('Timeout before all samples collected.')
-            dataset = self.session.poll(recording_time=.5, timeout=5)
+            dataset = self.session.poll()
             for k, v in dataset.copy().items():
                 if k in captured_data.keys():
                     n_records = sum(len(x) for x in captured_data[k])
