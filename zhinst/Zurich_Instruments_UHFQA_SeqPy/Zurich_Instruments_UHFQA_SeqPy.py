@@ -29,7 +29,8 @@ class Driver(LabberDriver):
         self.change_flag = False
         self.old_hash = ""
         self.sequence = Sequence()
-        self.data_buffer = [np.array([])] * 2
+        self.input_buffer = list()
+        self.result_buffer = list()
 
     def performClose(self, bError=False, options={}):
         """Perform the close instrument connection operation"""
@@ -50,21 +51,6 @@ class Driver(LabberDriver):
         # if a 'set_cmd' is defined, just set the node
         if quant.set_cmd:
             value = self.set_node_value(quant, value)
-
-        # TODO implementing these functions
-        # # sequencer outputs
-        # if quant.name == "Control - Output 1":
-        #     self.controller.awg.output1(int(value))
-
-        # if quant.name == "Control - Output 2":
-        #     self.controller.awg.output2(int(value))
-
-        # # sequencer gains
-        # if quant.name == "Control - Gain 1":
-        #     self.controller.awg.gain1(value)
-
-        # if quant.name == "Control - Gain 2":
-        #     self.controller.awg.gain2(value)
 
         # crosstalk - reset button
         if quant.name == "Crosstalk - Reset":
@@ -107,79 +93,83 @@ class Driver(LabberDriver):
         if quant.get_cmd:
             # if a 'get_cmd' is defined, use it to return the node value
             node = self.controller.root.raw_path_to_node(quant.set_cmd)
-            return node(enum=False)
+            value = node(enum=False)
         elif quant.name.startswith("Result Vector - QB"):
-            # get the result vector
+            if len(self.result_buffer) == 0:
+                self.result_buffer = self.get_qa_result(range(10))
             i = int(quant.name[-2:]) - 1
-            value = self.get_qa_result([i])
-            return quant.getTraceDict(value, x0=0, dx=1)
+            value = quant.getTraceDict(self.result_buffer[i], x0=0, dx=1)
         elif quant.name.startswith("Result Avg - QB"):
             # get the _averaged_ result vector
             i = int(quant.name[-2:]) - 1
-            value = self.get_qa_result([i])
-            if self.isHardwareLoop(options):
-                index, _ = self.getHardwareLoopIndex(options)
-                return value[index]
-            else:
-                return np.mean(value)
+            if len(self.result_buffer) == 0:
+                self.result_buffer = self.get_qa_result(range(10))
+            value = np.mean(self.result_buffer[i])
         elif quant.name == "Result Demod 1-2":
             # calculate 'demod 1-2' value
-            return self.get_demod_12()
-        elif quant.name == "QA Monitor - Inputs":
-            ch1, ch2 = self.get_qa_monitor_inputs()
-            combined = np.array([ch1, ch2])
-            return quant.getTraceDict(combined, dt=1/1.8e9)
+            value = self.get_demod_12()
+        elif quant.name.startswith("QA Monitor - Input"):
+            if len(self.input_buffer) == 0:
+                self.input_buffer = self.get_qa_monitor_inputs()
+            i = int(quant.name[-1]) - 1
+            value = quant.getTraceDict(self.input_buffer[i], dt=1/1.8e9)
         else:
-            return quant.getValue()
+            value = quant.getValue()
+        if self.isFinalCall(options):
+            self.input_buffer = list()
+            self.result_buffer = list()
+        return value
 
     def get_qa_monitor_inputs(self):
         result_wave_nodes = [
             self.controller.qas[0].monitor.inputs[i].wave for i in (0, 1)]
-        for node in result_wave_nodes:
-            node.subscribe()
-        self.performArm()
         RESULT_LENGTH = self.controller.qas[0].monitor.length()
         captured_data = {path: [] for path in result_wave_nodes}
         capture_done = {path: False for path in result_wave_nodes}
-        # main capture loop
-        while not np.all(np.array(list(capture_done.values()))):
-            # if start_time + timeout < time.time():
-            #     raise TimeoutError('Timeout before all samples collected.')
-            dataset = self.session.poll()
-            for k, v in dataset.copy().items():
-                if k in captured_data.keys():
-                    n_records = sum(len(x) for x in captured_data[k])
-                    if n_records != RESULT_LENGTH:
-                        captured_data[k].append(v[0]['vector'])
-                        capture_done[k] = True
+        for node in result_wave_nodes:
+            node.subscribe()
+        if self.getValue("QA Monitor - Enable"):
+            self.controller.qas[0].monitor.reset(1)
+            self.controller.qas[0].monitor.enable(1, deep=True)
+            # main capture loop
+            while not np.all(np.array(list(capture_done.values()))):
+                # if start_time + timeout < time.time():
+                #     raise TimeoutError('Timeout before all samples collected.')
+                dataset = self.session.poll()
+                for k, v in dataset.copy().items():
+                    if k in captured_data.keys():
+                        n_records = sum(len(x) for x in captured_data[k])
+                        if n_records != RESULT_LENGTH:
+                            captured_data[k].append(v[0]['vector'])
+                            capture_done[k] = True
+        self.controller.qas[0].monitor.enable(0, deep=True)
         self.controller.qas[0].monitor.inputs.unsubscribe()
         return list(captured_data.values())
 
     def get_qa_result(self, chs):
-        result_wave_nodes = list()
-        for ch in chs:
-            node = self.controller.qas[0].result.data[ch].wave
-            node.subscribe()
-            result_wave_nodes.append(node)
-        self.performArm()
+        result_wave_nodes = [
+            self.controller.qas[0].result.data[ch].wave for ch in chs]
         RESULT_LENGTH = self.controller.qas[0].result.length()
         captured_data = {path: [] for path in result_wave_nodes}
-        capture_done = False
-        # main capture loop
-        while not np.all(np.array(list(capture_done.values()))):
-            # if start_time + timeout < time.time():
-            #     raise TimeoutError('Timeout before all samples collected.')
-            dataset = self.session.poll()
-            for k, v in dataset.copy().items():
-                if k in captured_data.keys():
-                    n_records = sum(len(x) for x in captured_data[k])
-                    if n_records != RESULT_LENGTH:
-                        captured_data[k].append(v[0]['vector'])
-                    else:
-                        dataset.pop(k)
-            if not dataset:
-                capture_done = True
-                break
+        capture_done = {path: False for path in result_wave_nodes}
+        for node in result_wave_nodes:
+            node.subscribe()
+        if self.getValue("QA Results - Enable"):
+            self.controller.qas[0].result.reset(1)
+            self.controller.qas[0].result.enable(1, deep=True)
+            # main capture loop
+            while not np.all(np.array(list(capture_done.values()))):
+                # if start_time + timeout < time.time():
+                #     raise TimeoutError('Timeout before all samples collected.')
+                dataset = self.session.poll()
+                for k, v in dataset.copy().items():
+                    if k in captured_data.keys():
+                        n_records = sum(len(x) for x in captured_data[k])
+                        if n_records != RESULT_LENGTH:
+                            captured_data[k].append(v[0]['vector'])
+                        else:
+                            capture_done[k] = True
+        self.controller.qas[0].result.enable(0, deep=True)
         self.controller.qas[0].result.data.unsubscribe()
         return list(captured_data.values())
 
@@ -197,17 +187,6 @@ class Driver(LabberDriver):
             np.sin(phase_in_rad + x * 2 * np.pi * frequency / samp_freq)
         self.controller.qas[0].integration.weights[i].real(real_part)
         self.controller.qas[0].integration.weights[i].imag(imag_part)
-
-    def performArm(self):
-        """Perform the instrument arm operation"""
-        if self.getValue("QA Monitor - Enable"):
-            self.controller.qas[0].monitor.reset(1)
-            self.controller.qas[0].monitor.enable(1, deep=True)
-        if self.getValue("QA Results - Enable"):
-            self.controller.qas[0].result.reset(1)
-            self.controller.qas[0].result.enable(1, deep=True)
-        # if self.getValue("Sequencer - Trigger Mode") == "External Trigger":
-        #     self.controller.awg.run()
 
     def set_node_value(self, quant, value):
         node = self.controller.root.raw_path_to_node(quant.set_cmd)

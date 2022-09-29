@@ -160,8 +160,7 @@ def update_zhinst_uhfqa(uhfqa, sequence, samp_freq=None):
     uploaded_waveforms[0] = (waveforms[0], waveforms[1])
     with uhfqa.set_transaction():
         uhfqa.awgs[0].load_sequencer_program(awg_program)
-        uhfqa.awgs[0].write_to_waveform_memory(
-            uploaded_waveforms, validate=False)
+        uhfqa.awgs[0].write_to_waveform_memory(uploaded_waveforms)
         uhfqa.awgs[0].enable(True)
 
 
@@ -201,6 +200,5 @@ def update_zhinst_hdawg(hdawg, sequence, period, repetitions, samp_freq=None):
     # set up everything
     with hdawg.set_transaction():
         hdawg.awgs[0].load_sequencer_program(awg_program)
-        hdawg.awgs[0].write_to_waveform_memory(
-            uploaded_waveforms, validate=False)
+        hdawg.awgs[0].write_to_waveform_memory(uploaded_waveforms)
         hdawg.awgs[0].enable(True)
