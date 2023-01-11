@@ -113,7 +113,7 @@ class Sequence(SweepableExpr):
         waveforms = self.waveforms()
         x_axis = np.arange(self.left, self.right) / self.samp_freq
         for i in range(len(waveforms)):
-            plt.plot(x_axis, waveforms[i], label=f"channel{i}")
+            ax.plot(x_axis, waveforms[i], label=f"channel{i}")
         ax.plot(x_axis, self.marker_waveform(delay=False), label="marker")
         fig.legend()
         return fig

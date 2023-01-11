@@ -1,6 +1,7 @@
 from zhinst.toolkit import Sequence, Waveforms
 import numpy as np
 import copy
+import time
 
 # ----------------------------------------------------------
 #
@@ -163,8 +164,46 @@ def update_zhinst_uhfqa(uhfqa, sequence, samp_freq=None):
         uhfqa.awgs[0].write_to_waveform_memory(uploaded_waveforms)
         uhfqa.awgs[0].enable(True)
 
+# somehow the channel grouping is not working with offline compilation, so switch to awg module for n_channels >= 3
 
-def update_zhinst_hdawg(hdawg, sequence, period, repetitions, samp_freq=None):
+
+def compile_seqc(session, device, seqc):
+    awg = session.modules.awg
+    awg.device(device.serial)
+    awg.index(0)
+    awg.execute()
+    awg.compiler.sourcestring(seqc)
+
+    # The following lines are not mandatory but only to ensure that everything was compiled and uploaded correctly.
+    timeout = 10.0  # seconds
+    compiler_status = awg.compiler.status()
+    start = time.time()
+    while compiler_status == -1:
+        if time.time() - start >= timeout:
+            raise TimeoutError("Program compilation timed out")
+        time.sleep(0.1)
+        compiler_status = awg.compiler.status()
+    if compiler_status == 1:
+        raise RuntimeError(
+            "Error during sequencer compilation. Check the log for detailed information"
+        )
+    if compiler_status == 2:
+        print(
+            f"Warning during sequencer compilation {awg.compiler.statusstring()}")
+    # Check and wait until the elf upload to the device was successful
+    progress = awg.progress()
+    while progress < 1.0 or awg.elf.status() == 2 or device.awgs[0].ready() == 0:
+        if time.time() - start >= timeout:
+            raise TimeoutError(f"Program upload timed out")
+        time.sleep(0.1)
+        progress = awg.progress()
+    if awg.elf.status() or not device.awgs[0].ready():
+        raise RuntimeError(
+            "Error during upload of ELF file. Check the log for detailed information"
+        )
+
+
+def update_zhinst_hdawg(hdawg, session, sequence, period, repetitions, samp_freq=None):
     waveforms = copy.deepcopy(sequence.waveforms(samp_freq=samp_freq))
     # pad one channel if odd
     n_channels = len(waveforms)
@@ -185,8 +224,9 @@ def update_zhinst_hdawg(hdawg, sequence, period, repetitions, samp_freq=None):
                            total_length=sequence.length(),
                            repetitions=repetitions,
                            period=period)
-    awg_program = Sequence()
-    awg_program.code = seqc.file_string
+    # awg_program = Sequence()
+    # awg_program.code = seqc.file_string
+    compile_seqc(session, hdawg, seqc.file_string)
     # queue the waveforms
     uploaded_waveforms = Waveforms()
     ind = 0
@@ -199,6 +239,6 @@ def update_zhinst_hdawg(hdawg, sequence, period, repetitions, samp_freq=None):
             ind += 1
     # set up everything
     with hdawg.set_transaction():
-        hdawg.awgs[0].load_sequencer_program(awg_program)
+        # hdawg.awgs[0].load_sequencer_program(awg_program)
         hdawg.awgs[0].write_to_waveform_memory(uploaded_waveforms)
         hdawg.awgs[0].enable(True)

@@ -167,7 +167,6 @@ class Driver(LabberDriver):
                         n_records = sum(len(x) for x in captured_data[k])
                         if n_records != RESULT_LENGTH:
                             captured_data[k].append(v[0]['vector'])
-                        else:
                             capture_done[k] = True
         self.controller.qas[0].result.enable(0, deep=True)
         self.controller.qas[0].result.data.unsubscribe()

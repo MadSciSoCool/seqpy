@@ -31,8 +31,8 @@ class Driver(LabberDriver):
 
     def performOpen(self, options={}):
         """Perform the operation of opening the instrument connection"""
-        session = Session(HOST)
-        self.controller = session.connect_device(self.comCfg.address[:7])
+        self.session = Session(HOST)
+        self.controller = self.session.connect_device(self.comCfg.address[:7])
 
     def performClose(self, bError=False, options={}):
         """Perform the close instrument connection operation"""
@@ -154,6 +154,7 @@ class Driver(LabberDriver):
                     try:
                         update_zhinst_hdawg(
                             self.controller,
+                            self.session,
                             self.sequence,
                             self.getValue("SeqPy - Period") * samp_freq,
                             int(self.getValue("SeqPy - Repetitions")),
