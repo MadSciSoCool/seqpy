@@ -203,6 +203,9 @@ def compile_seqc(session, device, seqc):
         )
 
 
+padding = [2, 1, 0, 1, 0, 3, 2, 1, 0]
+
+
 def update_zhinst_hdawg(hdawg, session, sequence, period, repetitions, samp_freq=None):
     waveforms = copy.deepcopy(sequence.waveforms(samp_freq=samp_freq))
     # pad one channel if odd
@@ -210,7 +213,7 @@ def update_zhinst_hdawg(hdawg, session, sequence, period, repetitions, samp_freq
     if n_channels > 8:
         raise(Exception(
             "the maximum channel number supported for Zurich Instruments HDAWG is 8."))
-    if n_channels % 2 == 1:
+    for i in range(padding[n_channels]):
         waveforms.append(np.zeros(sequence.length()))
         n_channels += 1
     hdawg.awgs[0].enable(False)  # need to stop before change channel grouping
@@ -227,18 +230,18 @@ def update_zhinst_hdawg(hdawg, session, sequence, period, repetitions, samp_freq
     # awg_program = Sequence()
     # awg_program.code = seqc.file_string
     compile_seqc(session, hdawg, seqc.file_string)
-    # queue the waveforms
-    uploaded_waveforms = Waveforms()
-    ind = 0
-    for i in range(n_channels//2):
-        for start, end in active_times:
-            uploaded_waveforms.assign_waveform(ind,
-                                               waveforms[2 * i][start:end],
-                                               waveforms[2 * i + 1][start:end],
-                                               sequence.marker_waveform()[start:end])
-            ind += 1
-    # set up everything
+
+    # queue the waveforms, setup everything
     with hdawg.set_transaction():
-        # hdawg.awgs[0].load_sequencer_program(awg_program)
-        hdawg.awgs[0].write_to_waveform_memory(uploaded_waveforms)
+        for i in range(n_channels//2):
+            uploaded_waveforms = Waveforms()
+            ind = 0
+            for start, end in active_times:
+                uploaded_waveforms.assign_waveform(ind,
+                                                   waveforms[2 * i][start:end],
+                                                   waveforms[2 * i +
+                                                             1][start:end],
+                                                   sequence.marker_waveform()[start:end])
+                ind += 1
+            hdawg.awgs[i].write_to_waveform_memory(uploaded_waveforms)
         hdawg.awgs[0].enable(True)
