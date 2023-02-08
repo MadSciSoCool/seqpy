@@ -138,13 +138,13 @@ class Driver(LabberDriver):
             if len(self.result_buffer) == 0:
                 self.result_buffer = self.get_qa_result(range(10))
             i = int(quant.name[-2:]) - 1
-            value = quant.getTraceDict(self.result_buffer[i], x0=0, dx=1)
+            value = quant.getTraceDict(self.map2demod(self.result_buffer[i], self.result_buffer[i+5]), x0=0, dx=1)
         elif quant.name.startswith("Result Avg - QB"):
             # get the _averaged_ result vector
             i = int(quant.name[-2:]) - 1
             if len(self.result_buffer) == 0:
                 self.result_buffer = self.get_qa_result(range(10))
-            value = np.mean(self.result_buffer[i])
+            value = np.mean(self.map2demod(self.result_buffer[i], self.result_buffer[i+5]))
         elif quant.name == "Result Demod 1-2":
             # calculate 'demod 1-2' value
             value = self.get_demod_12()
@@ -159,6 +159,10 @@ class Driver(LabberDriver):
             self.input_buffer = list()
             self.result_buffer = list()
         return value
+
+    def map2demod(self, c1, c2):
+        return np.real((1-1j)*np.array(c1)) + 1.j * np.real((1+1j)*np.array(c2))
+
 
     def get_qa_monitor_inputs(self):
         result_wave_nodes = [
@@ -225,6 +229,8 @@ class Driver(LabberDriver):
         imag_part = np.sin(x * 2 * np.pi * frequency / samp_freq)
         self.controller.qas[0].integration.weights[i].real(real_part)
         self.controller.qas[0].integration.weights[i].imag(imag_part)
+        self.controller.qas[0].integration.weights[i+5].real(real_part)
+        self.controller.qas[0].integration.weights[i+5].imag(imag_part)
 
     def set_node_value(self, quant, value):
         node = self.controller.root.raw_path_to_node(quant.set_cmd)
