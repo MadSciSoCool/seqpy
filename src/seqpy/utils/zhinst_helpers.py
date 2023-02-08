@@ -36,11 +36,18 @@ class SeqcFile:
     def wait_trigger(self):
         self._writeline("waitDigTrigger(1, 1);")
 
+    def arm_digitization(self):
+        # self._writeline("setTrigger(AWG_INTEGRATION_ARM);")
+        pass
+
     def start_digitization(self, wait=0):
         if wait > 0:
             self._writeline(f"wait({int(wait/8):d});")
+        # self._writeline(
+        #     "setTrigger(AWG_INTEGRATION_ARM + AWG_INTEGRATION_TRIGGER + AWG_MONITOR_TRIGGER);")
         self._writeline("setTrigger(AWG_MONITOR_TRIGGER);")
         self._writeline("setTrigger(0);")
+        # self._writeline("setTrigger(AWG_INTEGRATION_ARM);")
 
     def play_wave(self, *args):
         arguments = ", ".join(
@@ -94,6 +101,7 @@ def readout_seqc_generation(total_length, digitization_start):
         seqc_file.define_placeholder(total_length, i, 0, marker=False)
     seqc_file.start_main_loop(-1)
     seqc_file.wait_trigger()
+    seqc_file.arm_digitization()
     seqc_file.play_wave((0, 0, 0), (1, 1, 0))
     seqc_file.start_digitization(wait=digitization_start)
     seqc_file.end_main_loop()
@@ -105,7 +113,7 @@ def readout_seqc_generation(total_length, digitization_start):
 #    zhinst wrapper
 #
 # ----------------------------------------------------------
-def find_active_time(waveforms, threshold=150000):
+def find_active_time(waveforms, threshold=5000):
     # find the period where at least one channel is not zero
     nonzero = np.any(np.array(waveforms), axis=0)
     nonzero_16 = np.any(nonzero.reshape(-1, 16), axis=1)
@@ -244,4 +252,4 @@ def update_zhinst_hdawg(hdawg, session, sequence, period, repetitions, samp_freq
                                                    sequence.marker_waveform()[start:end])
                 ind += 1
             hdawg.awgs[i].write_to_waveform_memory(uploaded_waveforms)
-        hdawg.awgs[0].enable(True)
+        # hdawg.awgs[0].enable(True)

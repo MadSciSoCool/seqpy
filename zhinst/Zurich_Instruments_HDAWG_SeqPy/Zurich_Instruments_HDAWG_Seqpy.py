@@ -5,6 +5,7 @@ import numpy as np
 import os
 import hashlib
 import re
+import time
 
 
 def hash_file(filename, blocksize=65536):
@@ -22,15 +23,12 @@ HOST = "localhost"
 class Driver(LabberDriver):
     """ This class implements a Labber driver"""
 
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
+    def performOpen(self, options={}):
+        """Perform the operation of opening the instrument connection"""
         self.sequence = Sequence()
         # change flag for awg updating
         self.change_flag = False
         self.old_hash = ""
-
-    def performOpen(self, options={}):
-        """Perform the operation of opening the instrument connection"""
         self.session = Session(HOST)
         self.controller = self.session.connect_device(self.comCfg.address[:7])
 
@@ -73,7 +71,7 @@ class Driver(LabberDriver):
 
         if self.isFinalCall(options):
             self.update_zhinst_hdawg()
-            self.awg_start_stop(quant, 1)
+            # self.awg_start_stop(quant, 1)
 
         return value
 
@@ -122,8 +120,8 @@ class Driver(LabberDriver):
             self.controller.awgs[0].enable(1)
         else:
             self.controller.awgs[0].enable(0)
-        if self.controller.awgs[0].single():
-            self.controller.awgs[0].wait_done()
+        # if self.controller.awgs[0].single():
+        #     self.controller.awgs[0].wait_done(timeout=60)
         # return self.controller.awgs[0].is_running
 
     def update_sequence(self):

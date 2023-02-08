@@ -88,6 +88,46 @@ class Driver(LabberDriver):
         # return the value that was set on the device ...
         return value
 
+    def performArm(self, quant_names, options={}):
+        # qa_monitor_ind = set()
+        # qa_result_ind = set()
+        # for name in quant_names:
+        #     if name.startswith("Result Vector - QB"):
+        #         i = int(name[-2:]) - 1
+        #         qa_result_ind |= {i}
+        #     elif name.startswith("Result Avg - QB"):
+        #         i = int(name[-2:]) - 1
+        #         qa_result_ind |= {i}
+        #     elif name.startswith("QA Monitor - Input"):
+        #         i = int(name[-1]) - 1
+        #         qa_monitor_ind |= {i}
+        # # arm the monitor nodes
+        qa_monitor_flag = False
+        qa_result_flag = False
+        for name in quant_names:
+            if name.startswith("Result Vector - QB") or name.startswith("Result Avg - QB"):
+                qa_result_flag = True
+            elif name.startswith("QA Monitor - Input"):
+                qa_monitor_flag = True
+        # arm the monitor nodes
+        if qa_monitor_flag:
+            monitor_wave_nodes = [
+                self.controller.qas[0].monitor.inputs[i].wave for i in (0, 1)]
+            for node in monitor_wave_nodes:
+                node.subscribe()
+            if self.getValue("QA Monitor - Enable"):
+                self.controller.qas[0].monitor.reset(1)
+                self.controller.qas[0].monitor.enable(1, deep=True)
+        # arm the result nodes
+        if qa_result_flag:
+            result_wave_nodes = [
+                self.controller.qas[0].result.data[ch].wave for ch in range(10)]
+            for node in result_wave_nodes:
+                node.subscribe()
+            if self.getValue("QA Results - Enable"):
+                self.controller.qas[0].result.reset(1)
+                self.controller.qas[0].result.enable(1, deep=True)
+
     def performGetValue(self, quant, options={}):
         """Perform the Get Value instrument operation"""
         if quant.get_cmd:
@@ -126,11 +166,11 @@ class Driver(LabberDriver):
         RESULT_LENGTH = self.controller.qas[0].monitor.length()
         captured_data = {path: [] for path in result_wave_nodes}
         capture_done = {path: False for path in result_wave_nodes}
-        for node in result_wave_nodes:
-            node.subscribe()
+        # for node in result_wave_nodes:
+        #     node.subscribe()
         if self.getValue("QA Monitor - Enable"):
-            self.controller.qas[0].monitor.reset(1)
-            self.controller.qas[0].monitor.enable(1, deep=True)
+            # self.controller.qas[0].monitor.reset(1)
+            # self.controller.qas[0].monitor.enable(1, deep=True)
             # main capture loop
             while not np.all(np.array(list(capture_done.values()))):
                 # if start_time + timeout < time.time():
@@ -152,11 +192,11 @@ class Driver(LabberDriver):
         RESULT_LENGTH = self.controller.qas[0].result.length()
         captured_data = {path: [] for path in result_wave_nodes}
         capture_done = {path: False for path in result_wave_nodes}
-        for node in result_wave_nodes:
-            node.subscribe()
+        # for node in result_wave_nodes:
+        #     node.subscribe()
         if self.getValue("QA Results - Enable"):
-            self.controller.qas[0].result.reset(1)
-            self.controller.qas[0].result.enable(1, deep=True)
+            # self.controller.qas[0].result.reset(1)
+            # self.controller.qas[0].result.enable(1, deep=True)
             # main capture loop
             while not np.all(np.array(list(capture_done.values()))):
                 # if start_time + timeout < time.time():
@@ -177,13 +217,12 @@ class Driver(LabberDriver):
         frequency = self.getValue(f"Channel {i+1} - Frequency")
         amplitude = self.getValue(f"Channel {i+1} - Amplitude")
         phase_shift = self.getValue(f"Channel {i+1} - Phase Shift")
-        phase_in_rad = phase_shift * np.pi / 180
+        # phase_in_rad = phase_shift * np.pi / 180
         samp_freq = 1.8e9
         x = np.arange(4097)
         real_part = amplitude * \
-            np.cos(phase_in_rad + x * 2 * np.pi * frequency / samp_freq)
-        imag_part = amplitude * \
-            np.sin(phase_in_rad + x * 2 * np.pi * frequency / samp_freq)
+            np.cos(phase_shift + x * 2 * np.pi * frequency / samp_freq)
+        imag_part = np.sin(x * 2 * np.pi * frequency / samp_freq)
         self.controller.qas[0].integration.weights[i].real(real_part)
         self.controller.qas[0].integration.weights[i].imag(imag_part)
 
