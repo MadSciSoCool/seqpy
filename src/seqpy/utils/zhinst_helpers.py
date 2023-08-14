@@ -107,6 +107,15 @@ def readout_seqc_generation(total_length, digitization_start):
     seqc_file.end_main_loop()
     return seqc_file
 
+def readout_freerun_seqc_generation(total_length):
+    seqc_file = SeqcFile(2)
+    for i in range(2):
+        seqc_file.define_placeholder(total_length, i, 0, marker=False)
+    seqc_file.start_main_loop(-1)
+    seqc_file.play_wave((0, 0, 0), (1, 1, 0))
+    seqc_file.end_main_loop()
+    return seqc_file
+
 
 # ----------------------------------------------------------
 #
@@ -144,7 +153,9 @@ def find_active_time(waveforms, threshold=5000):
     return active_times
 
 
-def update_zhinst_uhfqa(uhfqa, sequence, samp_freq=None):
+def update_zhinst_uhfqa(uhfqa, sequence, samp_freq=None, freerun=False):
+    if not samp_freq:
+        samp_freq = 1.8e9
     waveforms = copy.deepcopy(sequence.waveforms(samp_freq=samp_freq))
     n_channels = len(waveforms)
     if n_channels > 2:
@@ -155,8 +166,11 @@ def update_zhinst_uhfqa(uhfqa, sequence, samp_freq=None):
         waveforms.append(np.zeros(sequence.length()))
     waveforms = np.array(waveforms)
     digitization_start = sequence.trigger_pos*samp_freq - sequence.left
-    seqc = readout_seqc_generation(total_length=sequence.length(),
-                                   digitization_start=digitization_start)
+    if not freerun:
+        seqc = readout_seqc_generation(total_length=sequence.length(),
+                                    digitization_start=digitization_start)
+    else:
+        seqc = readout_freerun_seqc_generation(total_length=sequence.length())
     # compile the nominal awg
     # uhfqa.awg.set_sequence_params(sequence_type="Custom", path=seqc._filepath)
     # # upload the waveforms
