@@ -2,6 +2,7 @@ from zhinst.toolkit import Sequence, Waveforms
 import numpy as np
 import copy
 import time
+import warnings
 
 # ----------------------------------------------------------
 #
@@ -90,7 +91,10 @@ def seqc_generation(active_times, n_channels, total_length, repetitions, period)
         if i < n_waveforms - 1:
             seqc_file.wait(active_times[i+1][0] - active_times[i][1])
     # offset to be confirmed
-    seqc_file.wait(max(period - total_length, 1))
+    if period > total_length:
+        seqc_file.wait(period - total_length)
+    else:
+        warnings.warn("given period is shorter than pulse length, ignore period instead.")
     seqc_file.end_main_loop()
     return seqc_file
 
@@ -193,11 +197,12 @@ def compile_seqc(session, device, seqc):
     awg = session.modules.awg
     awg.device(device.serial)
     awg.index(0)
+    awg.sequencertype('auto-detect')
     awg.execute()
     awg.compiler.sourcestring(seqc)
 
     # The following lines are not mandatory but only to ensure that everything was compiled and uploaded correctly.
-    timeout = 10.0  # seconds
+    timeout = 100.0  # seconds
     compiler_status = awg.compiler.status()
     start = time.time()
     while compiler_status == -1:
@@ -210,8 +215,7 @@ def compile_seqc(session, device, seqc):
             "Error during sequencer compilation. Check the log for detailed information"
         )
     if compiler_status == 2:
-        print(
-            f"Warning during sequencer compilation {awg.compiler.statusstring()}")
+        print(f"Warning during sequencer compilation {awg.compiler.statusstring()}")
     # Check and wait until the elf upload to the device was successful
     progress = awg.progress()
     while progress < 1.0 or awg.elf.status() == 2 or device.awgs[0].ready() == 0:
@@ -224,11 +228,10 @@ def compile_seqc(session, device, seqc):
             "Error during upload of ELF file. Check the log for detailed information"
         )
 
-
 padding = [2, 1, 0, 1, 0, 3, 2, 1, 0]
 
 
-def update_zhinst_hdawg(hdawg, session, sequence, period, repetitions, samp_freq=None):
+def update_zhinst_hdawg(hdawg, session, sequence, period, repetitions=-1, samp_freq=None):
     waveforms = copy.deepcopy(sequence.waveforms(samp_freq=samp_freq))
     # pad one channel if odd
     n_channels = len(waveforms)
