@@ -25,7 +25,8 @@ class SeqcFile:
         # declare placeholder
         marker_option = "true" if marker else "false"
         self._writeline(
-            f"wave w_{i:d}_{j:d} = placeholder({length:d}, {marker_option});")
+            f"wave w_{i:d}_{j:d} = placeholder({length:d}, {marker_option});"
+        )
         # assign placeholder
         # self._writeline(f"assignWaveIndex(w{index}_1, w{index}_2, 0);")
 
@@ -51,8 +52,7 @@ class SeqcFile:
         # self._writeline("setTrigger(AWG_INTEGRATION_ARM);")
 
     def play_wave(self, *args):
-        arguments = ", ".join(
-            [f"{channel+1}, w_{i}_{j}" for (channel, i, j) in args])
+        arguments = ", ".join([f"{channel+1}, w_{i}_{j}" for (channel, i, j) in args])
         self._writeline(f"playWave({arguments});")
 
     def start_main_loop(self, iterations):
@@ -83,18 +83,20 @@ def seqc_generation(active_times, n_channels, total_length, repetitions, period)
     # define all placeholders
     for j, (start, end) in enumerate(active_times):
         for i in range(n_channels):
-            seqc_file.define_placeholder(end-start, i, j)
+            seqc_file.define_placeholder(end - start, i, j)
     seqc_file.start_main_loop(repetitions)
     for i in range(len(active_times)):
         args = [(j, j, i) for j in range(n_channels)]
         seqc_file.play_wave(*args)
         if i < n_waveforms - 1:
-            seqc_file.wait(active_times[i+1][0] - active_times[i][1])
+            seqc_file.wait(active_times[i + 1][0] - active_times[i][1])
     # offset to be confirmed
     if period > total_length:
         seqc_file.wait(period - total_length)
     else:
-        warnings.warn("given period is shorter than pulse length, ignore period instead.")
+        warnings.warn(
+            "given period is shorter than pulse length, ignore period instead."
+        )
     seqc_file.end_main_loop()
     return seqc_file
 
@@ -110,6 +112,7 @@ def readout_seqc_generation(total_length, digitization_start):
     seqc_file.start_digitization(wait=digitization_start)
     seqc_file.end_main_loop()
     return seqc_file
+
 
 def readout_freerun_seqc_generation(total_length):
     seqc_file = SeqcFile(2)
@@ -140,7 +143,9 @@ def find_active_time(waveforms, threshold=5000):
         if nonzero_16[p]:  # if current pointer is not zero
             dead_l = 0
             if not active_flag:
-                active_flag = True  # if previously not a active period, now entering one
+                active_flag = (
+                    True  # if previously not a active period, now entering one
+                )
                 ps = p  # register the starting point
         else:  # if current pointer is zero
             if active_flag:
@@ -148,12 +153,12 @@ def find_active_time(waveforms, threshold=5000):
                 if dead_l * 16 > threshold:
                     active_flag = False  # if previously a zero period, now exiting
                     # add this period if its length beyond the threshold
-                    active_times.append((ps*16, (p+1-dead_l)*16))
+                    active_times.append((ps * 16, (p + 1 - dead_l) * 16))
                     dead_l = 0
         p = p + 1
     # handle last active period
     if active_flag:
-        active_times.append((ps*16, p*16))
+        active_times.append((ps * 16, p * 16))
     return active_times
 
 
@@ -163,16 +168,20 @@ def update_zhinst_uhfqa(uhfqa, sequence, samp_freq=None, freerun=False):
     waveforms = copy.deepcopy(sequence.waveforms(samp_freq=samp_freq))
     n_channels = len(waveforms)
     if n_channels > 2:
-        raise(Exception(
-            "the maximum channel number supported for Zurich Instruments UHFQA is 2."))
+        raise (
+            Exception(
+                "the maximum channel number supported for Zurich Instruments UHFQA is 2."
+            )
+        )
     elif n_channels == 1:
         # padded to 2 channels
         waveforms.append(np.zeros(sequence.length()))
     waveforms = np.array(waveforms)
-    digitization_start = sequence.trigger_pos*samp_freq - sequence.left
+    digitization_start = sequence.trigger_pos * samp_freq - sequence.left
     if not freerun:
-        seqc = readout_seqc_generation(total_length=sequence.length(),
-                                    digitization_start=digitization_start)
+        seqc = readout_seqc_generation(
+            total_length=sequence.length(), digitization_start=digitization_start
+        )
     else:
         seqc = readout_freerun_seqc_generation(total_length=sequence.length())
     # compile the nominal awg
@@ -190,6 +199,7 @@ def update_zhinst_uhfqa(uhfqa, sequence, samp_freq=None, freerun=False):
         uhfqa.awgs[0].write_to_waveform_memory(uploaded_waveforms)
         uhfqa.awgs[0].enable(True)
 
+
 # somehow the channel grouping is not working with offline compilation, so switch to awg module for n_channels >= 3
 
 
@@ -197,7 +207,7 @@ def compile_seqc(session, device, seqc):
     awg = session.modules.awg
     awg.device(device.serial)
     awg.index(0)
-    awg.sequencertype('auto-detect')
+    awg.sequencertype("auto-detect")
     awg.execute()
     awg.compiler.sourcestring(seqc)
 
@@ -228,45 +238,57 @@ def compile_seqc(session, device, seqc):
             "Error during upload of ELF file. Check the log for detailed information"
         )
 
+
 padding = [2, 1, 0, 1, 0, 3, 2, 1, 0]
 
 
-def update_zhinst_hdawg(hdawg, session, sequence, period, repetitions=-1, samp_freq=None):
+def update_zhinst_hdawg(
+    hdawg, session, sequence, period, repetitions=-1, samp_freq=None
+):
+    if not samp_freq:
+        samp_freq = 2.4e9
     waveforms = copy.deepcopy(sequence.waveforms(samp_freq=samp_freq))
     # pad one channel if odd
     n_channels = len(waveforms)
     if n_channels > 8:
-        raise(Exception(
-            "the maximum channel number supported for Zurich Instruments HDAWG is 8."))
+        raise (
+            Exception(
+                "the maximum channel number supported for Zurich Instruments HDAWG is 8."
+            )
+        )
     for i in range(padding[n_channels]):
         waveforms.append(np.zeros(sequence.length()))
         n_channels += 1
     hdawg.awgs[0].enable(False)  # need to stop before change channel grouping
     hdawg.system.awg.channelgrouping(
-        np.log2(n_channels - 1))  # update channel group in zhinst-toolkit 0->2*4, 1->4*2, 2->8*1
+        np.log2(n_channels - 1)
+    )  # update channel group in zhinst-toolkit 0->2*4, 1->4*2, 2->8*1
     # find active time
     active_times = find_active_time(waveforms + [sequence.marker_waveform()])
     # generate and compile the .seqc file
-    seqc = seqc_generation(active_times=active_times,
-                           n_channels=n_channels,
-                           total_length=sequence.length(),
-                           repetitions=repetitions,
-                           period=period)
+    seqc = seqc_generation(
+        active_times=active_times,
+        n_channels=n_channels,
+        total_length=sequence.length(),
+        repetitions=repetitions,
+        period=int(period * samp_freq),
+    )
     # awg_program = Sequence()
     # awg_program.code = seqc.file_string
     compile_seqc(session, hdawg, seqc.file_string)
 
     # queue the waveforms, setup everything
     with hdawg.set_transaction():
-        for i in range(n_channels//2):
+        for i in range(n_channels // 2):
             uploaded_waveforms = Waveforms()
             ind = 0
             for start, end in active_times:
-                uploaded_waveforms.assign_waveform(ind,
-                                                   waveforms[2 * i][start:end],
-                                                   waveforms[2 * i +
-                                                             1][start:end],
-                                                   sequence.marker_waveform()[start:end])
+                uploaded_waveforms.assign_waveform(
+                    ind,
+                    waveforms[2 * i][start:end],
+                    waveforms[2 * i + 1][start:end],
+                    sequence.marker_waveform()[start:end],
+                )
                 ind += 1
             hdawg.awgs[i].write_to_waveform_memory(uploaded_waveforms)
         # hdawg.awgs[0].enable(True)

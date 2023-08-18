@@ -1,12 +1,8 @@
 from sympy import Symbol, Expr, symbols
 from sympy.functions import Max, Min
 from .utils.math_util import *
-from .utils.config import Configuration
 import copy
 import os
-
-config = Configuration(os.path.join(
-    os.path.expanduser("~"), "seqpy_config.json"))
 
 
 class Sweepable(Symbol):
@@ -38,7 +34,11 @@ class SweepableExpr:
             else:
                 for k in expr.atoms(Symbol):
                     # default value is 0
-                    v = self._sweepable_mapping[k.name] if k.name in self._sweepable_mapping else 0
+                    v = (
+                        self._sweepable_mapping[k.name]
+                        if k.name in self._sweepable_mapping
+                        else 0
+                    )
                     expr = expr.subs(k, v)
                 if "Int" in str(type(expr)):
                     expr = int(expr)
@@ -52,7 +52,6 @@ class SweepableExpr:
 
 
 class Pulse(SweepableExpr):
-
     def __init__(self, left, right, gain=1, offset=0, type="atom", children=[]) -> None:
         super().__init__()
         self._left = left
@@ -63,7 +62,7 @@ class Pulse(SweepableExpr):
         self.is_atom = True if type == "atom" else False
         self.type = type
         self.children = children
-        self._samp_freq = None
+        self._samp_freq = 2.4e9
 
     # -------------- Handle arithmetic Operation --------------
 
@@ -84,7 +83,12 @@ class Pulse(SweepableExpr):
 
     def __add__(self, other):
         if isinstance(other, Pulse):
-            return Pulse(Min(self._left, other._left), Max(self._right, other._right), type="add", children=[self, other])
+            return Pulse(
+                Min(self._left, other._left),
+                Max(self._right, other._right),
+                type="add",
+                children=[self, other],
+            )
         else:
             new = copy.deepcopy(self)
             new._offset += other
@@ -95,7 +99,12 @@ class Pulse(SweepableExpr):
 
     def __mul__(self, other):
         if isinstance(other, Pulse):
-            return Pulse(Min(self._left, other._left), Max(self._right, other._right), type="mul", children=[self, other])
+            return Pulse(
+                Min(self._left, other._left),
+                Max(self._right, other._right),
+                type="mul",
+                children=[self, other],
+            )
         else:
             new = copy.deepcopy(self)
             new._gain *= other
@@ -123,13 +132,13 @@ class Pulse(SweepableExpr):
         if self.is_atom:
             if self.left > self.right:
                 return np.array([])
-            x = np.arange(self.left, self.right) - \
-                self.displacement * self.samp_freq  # in sample
+            x = (
+                np.arange(self.left, self.right) - self.displacement * self.samp_freq
+            )  # in sample
             return self._waveform(x) * self.gain + self.offset
         else:
             # -------------- Tree traversing --------------
-            child1, child2 = [c.shift(self.displacement)
-                              for c in self.children]
+            child1, child2 = [c.shift(self.displacement) for c in self.children]
             for child in (child1, child2):
                 child.samp_freq = self.samp_freq
             wf1 = child1._pad(child1.waveform, self.left, self.right)
@@ -142,16 +151,18 @@ class Pulse(SweepableExpr):
     @property
     def left(self):
         left_val = self.retrieve_value(self._left)
-        return left_val if np.isinf(left_val) else round(left_val*self.samp_freq)
+        return left_val if np.isinf(left_val) else round(left_val * self.samp_freq)
 
     @property
     def right(self):
         right_val = self.retrieve_value(self._right)
-        return right_val if np.isinf(right_val) else round(right_val*self.samp_freq)+1
+        return (
+            right_val if np.isinf(right_val) else round(right_val * self.samp_freq) + 1
+        )
 
     @property
     def samp_freq(self):
-        return self._samp_freq if self._samp_freq else config.retrieve("SAMPLING_FREQUENCY")
+        return self._samp_freq
 
     @samp_freq.setter
     def samp_freq(self, value):
@@ -205,6 +216,7 @@ class Pulse(SweepableExpr):
 #
 # ------------------------------------------------
 
+
 class Carrier(Pulse):
     def __init__(self, frequency, phase) -> None:
         super().__init__(left=np.inf, right=-np.inf)
@@ -224,6 +236,7 @@ class Carrier(Pulse):
     def _extra_params(self):
         return [self.frequency, self.phase]
 
+
 # ------------------------------------------------
 #
 #        Define different kind of pulses
@@ -232,15 +245,15 @@ class Carrier(Pulse):
 
 
 class Gaussian(Pulse):
-    def __init__(self, width: int, plateau: int = 0, cutoff: float = 5.) -> None:
+    def __init__(self, width: int, plateau: int = 0, cutoff: float = 5.0) -> None:
         self.width = width
         self.plateau = plateau
-        left = -plateau/2 - cutoff*width/2
+        left = -plateau / 2 - cutoff * width / 2
         right = -left
         super().__init__(left, right)
 
     def _waveform(self, x):
-        return gauss(x, *np.array(self.extra_params)*self.samp_freq)
+        return gauss(x, *np.array(self.extra_params) * self.samp_freq)
 
     @property
     def _extra_params(self):
@@ -248,14 +261,14 @@ class Gaussian(Pulse):
 
 
 class Drag(Pulse):
-    def __init__(self, width: int, cutoff: float = 5.) -> None:
+    def __init__(self, width: int, cutoff: float = 5.0) -> None:
         self.width = width
-        left = -cutoff*width/2
+        left = -cutoff * width / 2
         right = -left
         super().__init__(left, right)
 
     def _waveform(self, x):
-        return drag(x, *np.array(self.extra_params)*self.samp_freq)
+        return drag(x, *np.array(self.extra_params) * self.samp_freq)
 
     @property
     def _extra_params(self):
@@ -265,12 +278,12 @@ class Drag(Pulse):
 class Rect(Pulse):
     def __init__(self, width: int) -> None:
         self.width = width
-        left = -width/2
+        left = -width / 2
         right = -left
         super().__init__(left, right)
 
     def _waveform(self, x):
-        return rectangle(x, *np.array(self.extra_params)*self.samp_freq)
+        return rectangle(x, *np.array(self.extra_params) * self.samp_freq)
 
     @property
     def _extra_params(self):
@@ -281,13 +294,13 @@ class Cosine(Pulse):
     def __init__(self, width: int, plateau: int = 0) -> None:
         self.width = width
         self.plateau = plateau
-        left = (-plateau / 2 - width)
+        left = -plateau / 2 - width
         right = -left
         self.is_atom = True
         super().__init__(left, right)
 
     def _waveform(self, x):
-        return cos(x, *np.array(self.extra_params)*self.samp_freq)
+        return cos(x, *np.array(self.extra_params) * self.samp_freq)
 
     @property
     def _extra_params(self):
@@ -295,7 +308,9 @@ class Cosine(Pulse):
 
 
 class Ramp(Pulse):
-    def __init__(self, width: int, amplitude_start: float, amplitude_end: float) -> None:
+    def __init__(
+        self, width: int, amplitude_start: float, amplitude_end: float
+    ) -> None:
         self.width = width
         self.amplitude_start = amplitude_start
         self.amplitude_end = amplitude_end
@@ -305,7 +320,7 @@ class Ramp(Pulse):
         super().__init__(left, right)
 
     def _waveform(self, x):
-        return ramp(x, *np.array(self.extra_params)*self.samp_freq)
+        return ramp(x, *np.array(self.extra_params) * self.samp_freq)
 
     @property
     def _extra_params(self):

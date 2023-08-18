@@ -1,4 +1,4 @@
-from .pulses import (Pulse, Carrier, Sweepable, SweepableExpr, config)
+from .pulses import Pulse, Carrier, Sweepable, SweepableExpr
 from .utils.pulse_reconstruction import reconstruct, str2expr, collect_sym
 import numpy as np
 import matplotlib.pyplot as plt
@@ -14,16 +14,18 @@ class Sequence(SweepableExpr):
         self._pulses = list()
         [self._pulses.append(list()) for i in range(n_channels)]
         self._trigger_pos = [0]
-        self._marker_width = 100/2.4e9  # default value
+        self._marker_width = 100 / 2.4e9  # default value
         self.left = 0
         self.right = 0
         self._changed = False
         self._waveforms = list()
-        self._samp_freq = None
+        self._samp_freq = 2.4e9
         self._cached_samp_freq = 0
         [self._waveforms.append(np.array([])) for i in range(n_channels)]
 
-    def register(self, position, pulse, carrier=None, frequency=None, phase=None, channel=None):
+    def register(
+        self, position, pulse, carrier=None, frequency=None, phase=None, channel=None
+    ):
         if not carrier:
             if frequency is None or phase is None:
                 raise Exception("Please provide information for carrier!")
@@ -46,27 +48,24 @@ class Sequence(SweepableExpr):
     @trigger_pos.setter
     def trigger_pos(self, position):
         # position: either list or float, will be converted to a iterable object anyway
-        position = [position] if not hasattr(
-            position, "__iter__") else position
+        position = [position] if not hasattr(position, "__iter__") else position
         self._trigger_pos = position
 
     def length(self):
         return len(self.waveforms()[0])
 
-    def waveforms(self, samp_freq=None):
-        if samp_freq:
-            self.samp_freq = samp_freq
+    def waveforms(self, samp_freq):
+        self.samp_freq = samp_freq
         freq_changed_flag = False
         if self.samp_freq != self._cached_samp_freq:
             freq_changed_flag = True
             self._cached_samp_freq = self.samp_freq
-        if self._changed or config.is_changed or freq_changed_flag:
+        if self._changed or freq_changed_flag:
             waveforms = list()
             for channel in self._pulses:
                 base = Pulse(left=np.inf, right=-np.inf)
                 for position, pulse, carrier in channel:
-                    shifting_amount = self.retrieve_value(
-                        position)  # in time
+                    shifting_amount = self.retrieve_value(position)  # in time
                     shifted = pulse.shift(shifting_amount)  # in time
                     base += carrier * shifted
                 waveforms.append(base)
@@ -84,13 +83,11 @@ class Sequence(SweepableExpr):
                 if wf.right > right:
                     right = wf.right
             # the range should include trigger position
-            delay_offset = config.retrieve(
-                "TRIGGER_DELAY")*self.samp_freq  # in samples
-            trig_pos = np.round(self.trigger_pos *
-                                self.samp_freq - delay_offset)  # in samples
+            trig_pos = np.round(self.trigger_pos * self.samp_freq)  # in samples
             trig_left = np.min(trig_pos) - 1  # in samples
-            trig_right = np.max(trig_pos) + self.marker_width * \
-                self.samp_freq  # in samples
+            trig_right = (
+                np.max(trig_pos) + self.marker_width * self.samp_freq
+            )  # in samples
             left = int(min(left, trig_left))
             right = int(max(right, trig_right))
             # padded to make the waveform to align with 16 samples (artifacts of zhinst)
@@ -110,22 +107,21 @@ class Sequence(SweepableExpr):
 
     def plot(self):
         fig, ax = plt.subplots()
-        waveforms = self.waveforms()
+        waveforms = self.waveforms(self.samp_freq)
         x_axis = np.arange(self.left, self.right) / self.samp_freq
         for i in range(len(waveforms)):
             ax.plot(x_axis, waveforms[i], label=f"channel{i}")
-        ax.plot(x_axis, self.marker_waveform(delay=False), label="marker")
+        ax.plot(x_axis, self.marker_waveform(), label="marker")
         fig.legend()
         return fig
 
-    def marker_waveform(self, delay=True):
+    def marker_waveform(self):
         base = np.zeros(self.length())
-        delay_offset = config.retrieve(
-            "TRIGGER_DELAY")*self.samp_freq if delay else 0  # in samples
         for trig in self.trigger_pos:
-            trig_left = trig * self.samp_freq - self.left - delay_offset
-            base[int(trig_left):int(
-                trig_left+self.marker_width*self.samp_freq)] = 1
+            trig_left = trig * self.samp_freq - self.left
+            base[
+                int(trig_left) : int(trig_left + self.marker_width * self.samp_freq)
+            ] = 1
         return base
 
     def dump(self, file):
@@ -162,7 +158,7 @@ class Sequence(SweepableExpr):
 
     @property
     def samp_freq(self):
-        return self._samp_freq if self._samp_freq else config.retrieve("SAMPLING_FREQUENCY")
+        return self._samp_freq
 
     @samp_freq.setter
     def samp_freq(self, value):
